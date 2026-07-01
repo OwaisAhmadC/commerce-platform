@@ -1,0 +1,21 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: commerce-mongo
+    restart: unless-stopped
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: >
+        mongosh --quiet --eval
+        "try { rs.status().ok ? 0 : 1 } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}).ok ? 0 : 1 }"
+      interval: 5s
+      timeout: 10s
+      retries: 15
+      start_period: 5s
+
+volumes:
+  mongo_data:
