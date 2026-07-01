@@ -671,3 +671,23 @@ testing once live keys are added (the webhook *logic* is fully tested locally vi
 real hosted Checkout page and a genuine Stripe-delivered webhook have not been exercised); pagination controls
 in the admin UI; and a scheduled job to reconcile/cancel long-abandoned pending orders as a backstop to the
 webhook-based expiry handling.
+
+## Post-submission addition — Swagger/OpenAPI docs
+
+Added `@nestjs/swagger` at the user's request for interactive API testing: `GET /docs` on the backend now serves
+a full Swagger UI, with request/response schemas auto-generated from the existing DTOs' `class-validator`
+decorators via the `@nestjs/swagger` Nest CLI plugin (`nest-cli.json` → `compilerOptions.plugins`), rather than
+manually annotating every field with `@ApiProperty` — verified the generated schemas (e.g. `SignupDto`,
+`CreateProductDto`) correctly reflect required fields and validation constraints (`minLength`, `minimum`,
+`format: email`) without any manual annotation. Endpoints are grouped by `@ApiTags` per controller, protected
+routes carry `@ApiBearerAuth()`, and the Stripe webhook endpoint is excluded via `@ApiExcludeEndpoint()` since
+it's called by Stripe, not a human tester.
+
+Verified with a real browser: the docs page loads and renders all 21 documented endpoints correctly grouped and
+tagged (confirmed via the generated OpenAPI JSON at `/docs-json`, not just visual inspection); a real `POST
+/api/auth/login` call executed through the Swagger UI's own "Try it out" against the live backend returned a
+genuine JWT; and the "Authorize" flow accepted that token and showed the `bearer` security scheme as
+"Authorized" (screenshot-confirmed). Did not exhaustively automate every protected endpoint through the UI
+itself — the request/response mechanics for bearer-authenticated calls were already exhaustively curl-tested
+across every phase above, so the incremental risk here was specifically "does the docs/auth wiring work," which
+was directly verified.

@@ -1,9 +1,11 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { RecommendationsService } from './recommendations.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/types/authenticated-user';
 
+@ApiTags('recommendations')
 @Controller('recommendations')
 export class RecommendationsController {
   constructor(
@@ -27,6 +29,7 @@ export class RecommendationsController {
   }
 
   @Get('for-me')
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   getForMe(
     @CurrentUser() user: AuthenticatedUser,

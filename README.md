@@ -55,6 +55,11 @@ made throughout the build.
    ```
    Runs on `http://localhost:4000`, API prefixed with `/api` (health check: `GET /api/health`).
 
+   **Interactive API docs (Swagger/OpenAPI):** `http://localhost:4000/docs` — every endpoint grouped by resource,
+   with request/response schemas generated from the actual DTOs. To test protected routes: call `POST
+   /api/auth/login` (or `/signup`) via the docs, copy the returned `accessToken`, click **Authorize** at the top
+   and paste it in, then any endpoint's "Try it out" will send it as a Bearer token automatically.
+
 3. **Frontend:**
    ```bash
    cd frontend
