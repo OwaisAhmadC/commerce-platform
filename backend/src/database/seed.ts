@@ -4,7 +4,10 @@ import * as bcrypt from 'bcrypt';
 import { Model, Types } from 'mongoose';
 import { AppModule } from '../app.module';
 import { User, UserDocument } from '../users/schemas/user.schema';
-import { Category, CategoryDocument } from '../categories/schemas/category.schema';
+import {
+  Category,
+  CategoryDocument,
+} from '../categories/schemas/category.schema';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { Cart, CartDocument } from '../cart/schemas/cart.schema';
 import { Order, OrderDocument } from '../orders/schemas/order.schema';
@@ -34,8 +37,18 @@ const PRODUCTS_BY_CATEGORY: Record<string, string[]> = {
     'Cutting Board Set',
     'Air Fryer',
   ],
-  Books: ['The Pragmatic Programmer', 'Clean Code', 'Atomic Habits', 'A Brief History of Time'],
-  Sportswear: ['Running Shoes', 'Yoga Mat', 'Adjustable Dumbbells', 'Cycling Helmet'],
+  Books: [
+    'The Pragmatic Programmer',
+    'Clean Code',
+    'Atomic Habits',
+    'A Brief History of Time',
+  ],
+  Sportswear: [
+    'Running Shoes',
+    'Yoga Mat',
+    'Adjustable Dumbbells',
+    'Cycling Helmet',
+  ],
 };
 
 async function seed() {
@@ -44,12 +57,18 @@ async function seed() {
   });
 
   const userModel = app.get<Model<UserDocument>>(getModelToken(User.name));
-  const categoryModel = app.get<Model<CategoryDocument>>(getModelToken(Category.name));
-  const productModel = app.get<Model<ProductDocument>>(getModelToken(Product.name));
+  const categoryModel = app.get<Model<CategoryDocument>>(
+    getModelToken(Category.name),
+  );
+  const productModel = app.get<Model<ProductDocument>>(
+    getModelToken(Product.name),
+  );
   const cartModel = app.get<Model<CartDocument>>(getModelToken(Cart.name));
   const orderModel = app.get<Model<OrderDocument>>(getModelToken(Order.name));
 
-  console.log('Clearing existing users, categories, products, carts, and orders...');
+  console.log(
+    'Clearing existing users, categories, products, carts, and orders...',
+  );
   await Promise.all([
     userModel.deleteMany({}),
     categoryModel.deleteMany({}),
@@ -65,7 +84,10 @@ async function seed() {
 
   console.log('Seeding products...');
   const categoryIdByName = new Map(
-    categories.map((c) => [c.name, (c as unknown as { _id: Types.ObjectId })._id]),
+    categories.map((c) => [
+      c.name,
+      (c as unknown as { _id: Types.ObjectId })._id,
+    ]),
   );
 
   const products: Array<Partial<Product> & { categoryId: Types.ObjectId }> = [];
@@ -94,7 +116,11 @@ async function seed() {
 
   await userModel.insertMany([
     { email: ADMIN_EMAIL, passwordHash: adminPasswordHash, role: 'admin' },
-    { email: CUSTOMER_EMAIL, passwordHash: customerPasswordHash, role: 'customer' },
+    {
+      email: CUSTOMER_EMAIL,
+      passwordHash: customerPasswordHash,
+      role: 'customer',
+    },
   ]);
 
   console.log('\nSeed complete.');
@@ -103,7 +129,9 @@ async function seed() {
   console.log(`  Admin:    ${ADMIN_EMAIL} / ${ADMIN_PASSWORD}`);
   console.log(`  Customer: ${CUSTOMER_EMAIL} / ${CUSTOMER_PASSWORD}`);
   console.log('----------------------------------------');
-  console.log(`Seeded ${categories.length} categories and ${products.length} products.`);
+  console.log(
+    `Seeded ${categories.length} categories and ${products.length} products.`,
+  );
 
   await app.close();
 }

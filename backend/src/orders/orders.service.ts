@@ -1,4 +1,8 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model, Types } from 'mongoose';
 import { Order, OrderDocument, OrderStatus } from './schemas/order.schema';
@@ -17,13 +21,18 @@ const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   cancelled: [],
 };
 
-const STOCK_DECREMENTED_STATUSES: OrderStatus[] = ['processing', 'shipped', 'delivered'];
+const STOCK_DECREMENTED_STATUSES: OrderStatus[] = [
+  'processing',
+  'shipped',
+  'delivered',
+];
 
 @Injectable()
 export class OrdersService {
   constructor(
     @InjectModel(Order.name) private readonly orderModel: Model<OrderDocument>,
-    @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
+    @InjectModel(Product.name)
+    private readonly productModel: Model<ProductDocument>,
     @InjectConnection() private readonly connection: Connection,
   ) {}
 
@@ -34,7 +43,10 @@ export class OrdersService {
       .exec();
   }
 
-  async findByIdForUser(userId: string, orderId: string): Promise<OrderDocument> {
+  async findByIdForUser(
+    userId: string,
+    orderId: string,
+  ): Promise<OrderDocument> {
     if (!Types.ObjectId.isValid(orderId)) {
       throw new NotFoundException('Order not found');
     }
@@ -47,7 +59,9 @@ export class OrdersService {
     return order;
   }
 
-  async findAllForAdmin(query: ListOrdersQueryDto): Promise<PaginatedResult<OrderDocument>> {
+  async findAllForAdmin(
+    query: ListOrdersQueryDto,
+  ): Promise<PaginatedResult<OrderDocument>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const filter = query.status ? { status: query.status } : {};
@@ -62,7 +76,13 @@ export class OrdersService {
       this.orderModel.countDocuments(filter).exec(),
     ]);
 
-    return { items, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) };
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    };
   }
 
   async findByIdForAdmin(orderId: string): Promise<OrderDocument> {
@@ -76,7 +96,10 @@ export class OrdersService {
     return order;
   }
 
-  async updateStatus(orderId: string, newStatus: OrderStatus): Promise<OrderDocument> {
+  async updateStatus(
+    orderId: string,
+    newStatus: OrderStatus,
+  ): Promise<OrderDocument> {
     const order = await this.findByIdForAdmin(orderId);
 
     if (order.status === newStatus) {
@@ -135,7 +158,9 @@ export class OrdersService {
     return order;
   }
 
-  private async withTransaction(work: (session: import('mongoose').ClientSession) => Promise<void>) {
+  private async withTransaction(
+    work: (session: import('mongoose').ClientSession) => Promise<void>,
+  ) {
     const session = await this.connection.startSession();
     try {
       await session.withTransaction(() => work(session));

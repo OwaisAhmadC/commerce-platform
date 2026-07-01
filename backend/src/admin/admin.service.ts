@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Order, OrderDocument, OrderStatus } from '../orders/schemas/order.schema';
+import {
+  Order,
+  OrderDocument,
+  OrderStatus,
+} from '../orders/schemas/order.schema';
 
 // "Sales" = orders that were actually paid for. Pending orders haven't completed
 // payment yet and cancelled orders never did, so neither counts toward revenue.
@@ -40,7 +44,9 @@ interface FacetResult {
 
 @Injectable()
 export class AdminService {
-  constructor(@InjectModel(Order.name) private readonly orderModel: Model<OrderDocument>) {}
+  constructor(
+    @InjectModel(Order.name) private readonly orderModel: Model<OrderDocument>,
+  ) {}
 
   async getDashboardStats(): Promise<DashboardStats> {
     const [result] = await this.orderModel.aggregate<FacetResult>([
@@ -60,7 +66,12 @@ export class AdminService {
                 name: { $first: '$items.name' },
                 totalQuantity: { $sum: '$items.quantity' },
                 totalRevenueCents: {
-                  $sum: { $multiply: ['$items.priceCentsAtPurchase', '$items.quantity'] },
+                  $sum: {
+                    $multiply: [
+                      '$items.priceCentsAtPurchase',
+                      '$items.quantity',
+                    ],
+                  },
                 },
               },
             },

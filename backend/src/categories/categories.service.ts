@@ -6,7 +6,8 @@ import { Category, CategoryDocument } from './schemas/category.schema';
 @Injectable()
 export class CategoriesService {
   constructor(
-    @InjectModel(Category.name) private readonly categoryModel: Model<CategoryDocument>,
+    @InjectModel(Category.name)
+    private readonly categoryModel: Model<CategoryDocument>,
   ) {}
 
   findAll(): Promise<CategoryDocument[]> {

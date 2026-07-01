@@ -17,10 +17,13 @@ export interface PaginatedResult<T> {
 @Injectable()
 export class ProductsService {
   constructor(
-    @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
+    @InjectModel(Product.name)
+    private readonly productModel: Model<ProductDocument>,
   ) {}
 
-  async findAll(query: ListProductsQueryDto): Promise<PaginatedResult<ProductDocument>> {
+  async findAll(
+    query: ListProductsQueryDto,
+  ): Promise<PaginatedResult<ProductDocument>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
 
@@ -34,10 +37,15 @@ export class ProductsService {
       filter.categoryId = new Types.ObjectId(query.categoryId);
     }
 
-    if (query.minPriceCents !== undefined || query.maxPriceCents !== undefined) {
+    if (
+      query.minPriceCents !== undefined ||
+      query.maxPriceCents !== undefined
+    ) {
       filter.priceCents = {};
-      if (query.minPriceCents !== undefined) filter.priceCents.$gte = query.minPriceCents;
-      if (query.maxPriceCents !== undefined) filter.priceCents.$lte = query.maxPriceCents;
+      if (query.minPriceCents !== undefined)
+        filter.priceCents.$gte = query.minPriceCents;
+      if (query.maxPriceCents !== undefined)
+        filter.priceCents.$lte = query.maxPriceCents;
     }
 
     const sort: Record<string, 1 | -1> =
@@ -57,7 +65,13 @@ export class ProductsService {
       this.productModel.countDocuments(filter).exec(),
     ]);
 
-    return { items, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) };
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    };
   }
 
   async findById(id: string): Promise<ProductDocument> {
@@ -84,7 +98,8 @@ export class ProductsService {
     if (dto.description !== undefined) product.description = dto.description;
     if (dto.priceCents !== undefined) product.priceCents = dto.priceCents;
     if (dto.imageUrl !== undefined) product.imageUrl = dto.imageUrl;
-    if (dto.categoryId !== undefined) product.categoryId = new Types.ObjectId(dto.categoryId);
+    if (dto.categoryId !== undefined)
+      product.categoryId = new Types.ObjectId(dto.categoryId);
     if (dto.stock !== undefined) product.stock = dto.stock;
     await product.save();
     return product;

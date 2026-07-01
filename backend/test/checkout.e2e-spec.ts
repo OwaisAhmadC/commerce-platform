@@ -8,8 +8,14 @@ import { App } from 'supertest/types';
 import Stripe from 'stripe';
 import { AppModule } from '../src/app.module';
 import { User, UserDocument } from '../src/users/schemas/user.schema';
-import { Category, CategoryDocument } from '../src/categories/schemas/category.schema';
-import { Product, ProductDocument } from '../src/products/schemas/product.schema';
+import {
+  Category,
+  CategoryDocument,
+} from '../src/categories/schemas/category.schema';
+import {
+  Product,
+  ProductDocument,
+} from '../src/products/schemas/product.schema';
 import { Cart, CartDocument } from '../src/cart/schemas/cart.schema';
 import { Order, OrderDocument } from '../src/orders/schemas/order.schema';
 
@@ -57,9 +63,11 @@ describe('Checkout webhook (e2e)', () => {
       passwordHash: 'not-used-in-this-test',
       role: 'customer',
     });
-    userId = user.id as string;
+    userId = user.id;
 
-    const category = await categoryModel.create({ name: `Webhook Test Category ${Date.now()}` });
+    const category = await categoryModel.create({
+      name: `Webhook Test Category ${Date.now()}`,
+    });
     categoryId = category._id;
   });
 
@@ -86,7 +94,11 @@ describe('Checkout webhook (e2e)', () => {
       .send(body);
   }
 
-  function completedEventPayload(sessionId: string, orderId: string, paymentIntent = 'pi_fake') {
+  function completedEventPayload(
+    sessionId: string,
+    orderId: string,
+    paymentIntent = 'pi_fake',
+  ) {
     return {
       id: `evt_${sessionId}`,
       object: 'event',
@@ -108,7 +120,11 @@ describe('Checkout webhook (e2e)', () => {
       object: 'event',
       type: 'checkout.session.expired',
       data: {
-        object: { id: sessionId, object: 'checkout.session', metadata: { orderId } },
+        object: {
+          id: sessionId,
+          object: 'checkout.session',
+          metadata: { orderId },
+        },
       },
     };
   }
@@ -143,13 +159,18 @@ describe('Checkout webhook (e2e)', () => {
       status: 'pending',
       totalCents: 2000,
       items: [
-        { productId: product._id, name: product.name, quantity: 2, priceCentsAtPurchase: 1000 },
+        {
+          productId: product._id,
+          name: product.name,
+          quantity: 2,
+          priceCentsAtPurchase: 1000,
+        },
       ],
       stripeSessionId: 'cs_test_complete_1',
     });
 
     const res = await postSignedWebhook(
-      completedEventPayload('cs_test_complete_1', order.id as string),
+      completedEventPayload('cs_test_complete_1', order.id),
     );
     expect(res.status).toBe(200);
 
@@ -159,7 +180,9 @@ describe('Checkout webhook (e2e)', () => {
     const updatedProduct = await productModel.findById(product._id).exec();
     expect(updatedProduct?.stock).toBe(3);
 
-    const updatedCart = await cartModel.findOne({ userId: new Types.ObjectId(userId) }).exec();
+    const updatedCart = await cartModel
+      .findOne({ userId: new Types.ObjectId(userId) })
+      .exec();
     expect(updatedCart?.items).toHaveLength(0);
   });
 
@@ -178,12 +201,17 @@ describe('Checkout webhook (e2e)', () => {
       status: 'pending',
       totalCents: 500,
       items: [
-        { productId: product._id, name: product.name, quantity: 1, priceCentsAtPurchase: 500 },
+        {
+          productId: product._id,
+          name: product.name,
+          quantity: 1,
+          priceCentsAtPurchase: 500,
+        },
       ],
       stripeSessionId: 'cs_test_idempotent',
     });
 
-    const payload = completedEventPayload('cs_test_idempotent', order.id as string);
+    const payload = completedEventPayload('cs_test_idempotent', order.id);
     const first = await postSignedWebhook(payload);
     const second = await postSignedWebhook(payload);
 
@@ -209,13 +237,18 @@ describe('Checkout webhook (e2e)', () => {
       status: 'pending',
       totalCents: 1500,
       items: [
-        { productId: product._id, name: product.name, quantity: 3, priceCentsAtPurchase: 500 },
+        {
+          productId: product._id,
+          name: product.name,
+          quantity: 3,
+          priceCentsAtPurchase: 500,
+        },
       ],
       stripeSessionId: 'cs_test_insufficient_stock',
     });
 
     const res = await postSignedWebhook(
-      completedEventPayload('cs_test_insufficient_stock', order.id as string),
+      completedEventPayload('cs_test_insufficient_stock', order.id),
     );
     expect(res.status).toBe(200);
 
@@ -241,12 +274,19 @@ describe('Checkout webhook (e2e)', () => {
       status: 'pending',
       totalCents: 500,
       items: [
-        { productId: product._id, name: product.name, quantity: 1, priceCentsAtPurchase: 500 },
+        {
+          productId: product._id,
+          name: product.name,
+          quantity: 1,
+          priceCentsAtPurchase: 500,
+        },
       ],
       stripeSessionId: 'cs_test_expired',
     });
 
-    const res = await postSignedWebhook(expiredEventPayload('cs_test_expired', order.id as string));
+    const res = await postSignedWebhook(
+      expiredEventPayload('cs_test_expired', order.id),
+    );
     expect(res.status).toBe(200);
 
     const updatedOrder = await orderModel.findById(order._id).exec();

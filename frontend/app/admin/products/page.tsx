@@ -23,7 +23,6 @@ export default function AdminProductsPage() {
 
   useEffect(() => {
     loadProducts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleDelete(id: string) {

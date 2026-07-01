@@ -1,4 +1,12 @@
-import { IsInt, IsMongoId, IsOptional, IsString, IsUrl, Min, MinLength } from 'class-validator';
+import {
+  IsInt,
+  IsMongoId,
+  IsOptional,
+  IsString,
+  IsUrl,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 export class UpdateProductDto {
   @IsOptional()

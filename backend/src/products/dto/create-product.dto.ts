@@ -1,4 +1,11 @@
-import { IsInt, IsMongoId, IsString, IsUrl, Min, MinLength } from 'class-validator';
+import {
+  IsInt,
+  IsMongoId,
+  IsString,
+  IsUrl,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 export class CreateProductDto {
   @IsString()

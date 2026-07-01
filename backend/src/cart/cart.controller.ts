@@ -1,4 +1,13 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { CartService } from './cart.service';
 import { AddCartItemDto } from './dto/add-cart-item.dto';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto';
@@ -31,7 +40,10 @@ export class CartController {
   }
 
   @Delete('items/:productId')
-  removeItem(@CurrentUser() user: AuthenticatedUser, @Param('productId') productId: string) {
+  removeItem(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('productId') productId: string,
+  ) {
     return this.cartService.removeItem(user.userId, productId);
   }
 }

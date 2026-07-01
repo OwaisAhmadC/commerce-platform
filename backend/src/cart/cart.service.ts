@@ -1,4 +1,8 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Cart, CartDocument, CartItem } from './schemas/cart.schema';
@@ -24,7 +28,8 @@ export interface CartView {
 export class CartService {
   constructor(
     @InjectModel(Cart.name) private readonly cartModel: Model<CartDocument>,
-    @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
+    @InjectModel(Product.name)
+    private readonly productModel: Model<ProductDocument>,
   ) {}
 
   async getCartView(userId: string): Promise<CartView> {
@@ -39,30 +44,43 @@ export class CartService {
     }
 
     const cart = await this.getOrCreateCart(userId);
-    const existing = cart.items.find((item) => item.productId.toString() === dto.productId);
+    const existing = cart.items.find(
+      (item) => item.productId.toString() === dto.productId,
+    );
     const newQuantity = (existing?.quantity ?? 0) + dto.quantity;
 
     if (newQuantity > product.stock) {
-      throw new ConflictException(`Only ${product.stock} of "${product.name}" in stock`);
+      throw new ConflictException(
+        `Only ${product.stock} of "${product.name}" in stock`,
+      );
     }
 
     if (existing) {
       existing.quantity = newQuantity;
     } else {
-      cart.items.push({ productId: product._id, quantity: dto.quantity } as CartItem);
+      cart.items.push({
+        productId: product._id,
+        quantity: dto.quantity,
+      });
     }
 
     await cart.save();
     return this.buildView(cart);
   }
 
-  async updateItem(userId: string, productId: string, quantity: number): Promise<CartView> {
+  async updateItem(
+    userId: string,
+    productId: string,
+    quantity: number,
+  ): Promise<CartView> {
     const product = await this.productModel.findById(productId).exec();
     if (!product) {
       throw new NotFoundException('Product not found');
     }
     if (quantity > product.stock) {
-      throw new ConflictException(`Only ${product.stock} of "${product.name}" in stock`);
+      throw new ConflictException(
+        `Only ${product.stock} of "${product.name}" in stock`,
+      );
     }
 
     const cart = await this.getOrCreateCart(userId);
@@ -80,21 +98,28 @@ export class CartService {
     const cart = await this.getOrCreateCart(userId);
     cart.items = cart.items.filter(
       (item) => item.productId.toString() !== productId,
-    ) as typeof cart.items;
+    );
     await cart.save();
     return this.buildView(cart);
   }
 
   private async getOrCreateCart(userId: string): Promise<CartDocument> {
-    const existing = await this.cartModel.findOne({ userId: new Types.ObjectId(userId) }).exec();
+    const existing = await this.cartModel
+      .findOne({ userId: new Types.ObjectId(userId) })
+      .exec();
     if (existing) return existing;
-    return this.cartModel.create({ userId: new Types.ObjectId(userId), items: [] });
+    return this.cartModel.create({
+      userId: new Types.ObjectId(userId),
+      items: [],
+    });
   }
 
   private async buildView(cart: CartDocument): Promise<CartView> {
     const productIds = cart.items.map((item) => item.productId);
-    const products = await this.productModel.find({ _id: { $in: productIds } }).exec();
-    const productMap = new Map(products.map((p) => [p.id as string, p]));
+    const products = await this.productModel
+      .find({ _id: { $in: productIds } })
+      .exec();
+    const productMap = new Map(products.map((p) => [p.id, p]));
 
     const keptItems: CartItem[] = [];
     const view: CartItemView[] = [];
@@ -105,7 +130,7 @@ export class CartService {
 
       keptItems.push(item);
       view.push({
-        productId: product.id as string,
+        productId: product.id,
         name: product.name,
         imageUrl: product.imageUrl,
         priceCents: product.priceCents,
@@ -116,7 +141,7 @@ export class CartService {
     }
 
     if (keptItems.length !== cart.items.length) {
-      cart.items = keptItems as typeof cart.items;
+      cart.items = keptItems;
       await cart.save();
     }
 

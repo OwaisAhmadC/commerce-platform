@@ -6,11 +6,19 @@ import type { AuthenticatedUser } from '../common/types/authenticated-user';
 
 @Controller('recommendations')
 export class RecommendationsController {
-  constructor(private readonly recommendationsService: RecommendationsService) {}
+  constructor(
+    private readonly recommendationsService: RecommendationsService,
+  ) {}
 
   @Get('products/:productId')
-  getRelatedToProduct(@Param('productId') productId: string, @Query('limit') limit?: string) {
-    return this.recommendationsService.getRelatedToProduct(productId, parseLimit(limit));
+  getRelatedToProduct(
+    @Param('productId') productId: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.recommendationsService.getRelatedToProduct(
+      productId,
+      parseLimit(limit),
+    );
   }
 
   @Get('trending')
@@ -20,8 +28,14 @@ export class RecommendationsController {
 
   @Get('for-me')
   @UseGuards(JwtAuthGuard)
-  getForMe(@CurrentUser() user: AuthenticatedUser, @Query('limit') limit?: string) {
-    return this.recommendationsService.getPersonalizedForUser(user.userId, parseLimit(limit));
+  getForMe(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('limit') limit?: string,
+  ) {
+    return this.recommendationsService.getPersonalizedForUser(
+      user.userId,
+      parseLimit(limit),
+    );
   }
 }
 

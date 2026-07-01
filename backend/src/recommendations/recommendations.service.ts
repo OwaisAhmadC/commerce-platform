@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Order, OrderDocument, OrderStatus } from '../orders/schemas/order.schema';
+import {
+  Order,
+  OrderDocument,
+  OrderStatus,
+} from '../orders/schemas/order.schema';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 
 const PAID_STATUSES: OrderStatus[] = ['processing', 'shipped', 'delivered'];
@@ -11,7 +15,8 @@ const DEFAULT_LIMIT = 4;
 export class RecommendationsService {
   constructor(
     @InjectModel(Order.name) private readonly orderModel: Model<OrderDocument>,
-    @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
+    @InjectModel(Product.name)
+    private readonly productModel: Model<ProductDocument>,
   ) {}
 
   /**
@@ -19,12 +24,23 @@ export class RecommendationsService {
    * co-occurrence in paid orders. Falls back to same-category products when
    * there's no purchase history to draw on yet (e.g. a fresh seed).
    */
-  async getRelatedToProduct(productId: string, limit = DEFAULT_LIMIT): Promise<ProductDocument[]> {
+  async getRelatedToProduct(
+    productId: string,
+    limit = DEFAULT_LIMIT,
+  ): Promise<ProductDocument[]> {
     if (!Types.ObjectId.isValid(productId)) return [];
     const productObjectId = new Types.ObjectId(productId);
 
-    const coPurchased = await this.orderModel.aggregate<{ _id: Types.ObjectId; count: number }>([
-      { $match: { status: { $in: PAID_STATUSES }, 'items.productId': productObjectId } },
+    const coPurchased = await this.orderModel.aggregate<{
+      _id: Types.ObjectId;
+      count: number;
+    }>([
+      {
+        $match: {
+          status: { $in: PAID_STATUSES },
+          'items.productId': productObjectId,
+        },
+      },
       { $unwind: '$items' },
       { $match: { 'items.productId': { $ne: productObjectId } } },
       { $group: { _id: '$items.productId', count: { $sum: 1 } } },
@@ -51,9 +67,15 @@ export class RecommendationsService {
    * most, excluding products they already own. Falls back to trending, then to
    * newest, for customers with no purchase history yet.
    */
-  async getPersonalizedForUser(userId: string, limit = DEFAULT_LIMIT): Promise<ProductDocument[]> {
+  async getPersonalizedForUser(
+    userId: string,
+    limit = DEFAULT_LIMIT,
+  ): Promise<ProductDocument[]> {
     const userOrders = await this.orderModel
-      .find({ userId: new Types.ObjectId(userId), status: { $in: PAID_STATUSES } })
+      .find({
+        userId: new Types.ObjectId(userId),
+        status: { $in: PAID_STATUSES },
+      })
       .exec();
 
     const purchasedIds = new Set<string>();
@@ -67,7 +89,9 @@ export class RecommendationsService {
       return this.getTrending(limit);
     }
 
-    const purchasedObjectIds = [...purchasedIds].map((id) => new Types.ObjectId(id));
+    const purchasedObjectIds = [...purchasedIds].map(
+      (id) => new Types.ObjectId(id),
+    );
     const purchasedProducts = await this.productModel
       .find({ _id: { $in: purchasedObjectIds } })
       .exec();
@@ -78,7 +102,9 @@ export class RecommendationsService {
       categoryCounts.set(categoryId, (categoryCounts.get(categoryId) ?? 0) + 1);
     }
 
-    const topCategoryId = [...categoryCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+    const topCategoryId = [...categoryCounts.entries()].sort(
+      (a, b) => b[1] - a[1],
+    )[0]?.[0];
     if (!topCategoryId) {
       return this.getTrending(limit);
     }
@@ -91,15 +117,25 @@ export class RecommendationsService {
       .limit(limit)
       .exec();
 
-    return recommendations.length > 0 ? recommendations : this.getTrending(limit);
+    return recommendations.length > 0
+      ? recommendations
+      : this.getTrending(limit);
   }
 
   /** Top-selling products overall; falls back to newest when there's no sales data yet. */
   async getTrending(limit = DEFAULT_LIMIT): Promise<ProductDocument[]> {
-    const topSelling = await this.orderModel.aggregate<{ _id: Types.ObjectId; totalQuantity: number }>([
+    const topSelling = await this.orderModel.aggregate<{
+      _id: Types.ObjectId;
+      totalQuantity: number;
+    }>([
       { $match: { status: { $in: PAID_STATUSES } } },
       { $unwind: '$items' },
-      { $group: { _id: '$items.productId', totalQuantity: { $sum: '$items.quantity' } } },
+      {
+        $group: {
+          _id: '$items.productId',
+          totalQuantity: { $sum: '$items.quantity' },
+        },
+      },
       { $sort: { totalQuantity: -1 } },
       { $limit: limit },
     ]);
@@ -111,9 +147,11 @@ export class RecommendationsService {
     return this.productModel.find().sort({ createdAt: -1 }).limit(limit).exec();
   }
 
-  private async loadProductsPreservingOrder(ids: Types.ObjectId[]): Promise<ProductDocument[]> {
+  private async loadProductsPreservingOrder(
+    ids: Types.ObjectId[],
+  ): Promise<ProductDocument[]> {
     const products = await this.productModel.find({ _id: { $in: ids } }).exec();
-    const productMap = new Map(products.map((p) => [p.id as string, p]));
+    const productMap = new Map(products.map((p) => [p.id, p]));
 
     const result: ProductDocument[] = [];
     for (const id of ids) {

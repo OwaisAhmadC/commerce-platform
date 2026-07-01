@@ -2,7 +2,13 @@ import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 import type { OrderStatus } from '../schemas/order.schema';
 
-const STATUSES: OrderStatus[] = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
+const STATUSES: OrderStatus[] = [
+  'pending',
+  'processing',
+  'shipped',
+  'delivered',
+  'cancelled',
+];
 
 export class ListOrdersQueryDto {
   @IsOptional()

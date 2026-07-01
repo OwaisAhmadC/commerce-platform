@@ -29,12 +29,17 @@ export class CheckoutService {
     private readonly cartService: CartService,
     @InjectConnection() private readonly connection: Connection,
     @InjectModel(Order.name) private readonly orderModel: Model<OrderDocument>,
-    @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
+    @InjectModel(Product.name)
+    private readonly productModel: Model<ProductDocument>,
     @InjectModel(Cart.name) private readonly cartModel: Model<CartDocument>,
   ) {
-    this.stripe = new Stripe(this.configService.get<string>('STRIPE_SECRET_KEY') ?? '');
-    this.frontendUrl = this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
-    this.webhookSecret = this.configService.get<string>('STRIPE_WEBHOOK_SECRET') ?? '';
+    this.stripe = new Stripe(
+      this.configService.get<string>('STRIPE_SECRET_KEY') ?? '',
+    );
+    this.frontendUrl =
+      this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
+    this.webhookSecret =
+      this.configService.get<string>('STRIPE_WEBHOOK_SECRET') ?? '';
   }
 
   async createCheckoutSession(userId: string, email: string) {
@@ -45,7 +50,9 @@ export class CheckoutService {
 
     for (const item of cartView.items) {
       if (item.quantity > item.stock) {
-        throw new ConflictException(`Only ${item.stock} of "${item.name}" in stock`);
+        throw new ConflictException(
+          `Only ${item.stock} of "${item.name}" in stock`,
+        );
       }
     }
 
@@ -77,19 +84,21 @@ export class CheckoutService {
         success_url: `${this.frontendUrl}/checkout/confirmation?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${this.frontendUrl}/cart`,
         expires_at: Math.floor(Date.now() / 1000) + SESSION_EXPIRY_SECONDS,
-        metadata: { orderId: order.id as string },
+        metadata: { orderId: order.id },
       });
 
       order.stripeSessionId = session.id;
       await order.save();
 
-      return { url: session.url, orderId: order.id as string };
+      return { url: session.url, orderId: order.id };
     } catch (err) {
       // Roll back the pending order rather than leaving an orphaned record if Stripe
       // is unreachable or misconfigured (e.g. a placeholder key before real credentials
       // are added) -- surface a clean error instead of a raw Stripe/network stack trace.
       await this.orderModel.deleteOne({ _id: order._id }).exec();
-      this.logger.error(`Failed to create Stripe checkout session: ${(err as Error).message}`);
+      this.logger.error(
+        `Failed to create Stripe checkout session: ${(err as Error).message}`,
+      );
       throw new ServiceUnavailableException(
         'Payment provider is currently unavailable. Please try again later.',
       );
@@ -98,7 +107,10 @@ export class CheckoutService {
 
   async getSessionStatus(userId: string, sessionId: string) {
     const order = await this.orderModel
-      .findOne({ stripeSessionId: sessionId, userId: new Types.ObjectId(userId) })
+      .findOne({
+        stripeSessionId: sessionId,
+        userId: new Types.ObjectId(userId),
+      })
       .exec();
     if (!order) {
       throw new NotFoundException('Checkout session not found');
@@ -109,20 +121,28 @@ export class CheckoutService {
   async handleWebhookEvent(rawBody: Buffer, signature: string): Promise<void> {
     let event: Stripe.Event;
     try {
-      event = this.stripe.webhooks.constructEvent(rawBody, signature, this.webhookSecret);
+      event = this.stripe.webhooks.constructEvent(
+        rawBody,
+        signature,
+        this.webhookSecret,
+      );
     } catch (err) {
-      this.logger.warn(`Rejected webhook with invalid signature: ${(err as Error).message}`);
+      this.logger.warn(
+        `Rejected webhook with invalid signature: ${(err as Error).message}`,
+      );
       throw new BadRequestException('Invalid webhook signature');
     }
 
     if (event.type === 'checkout.session.completed') {
-      await this.handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
+      await this.handleCheckoutCompleted(event.data.object);
     } else if (event.type === 'checkout.session.expired') {
-      await this.handleCheckoutExpired(event.data.object as Stripe.Checkout.Session);
+      await this.handleCheckoutExpired(event.data.object);
     }
   }
 
-  private async handleCheckoutCompleted(session: Stripe.Checkout.Session): Promise<void> {
+  private async handleCheckoutCompleted(
+    session: Stripe.Checkout.Session,
+  ): Promise<void> {
     const orderId = session.metadata?.orderId;
     if (!orderId) return;
 
@@ -154,7 +174,11 @@ export class CheckoutService {
         await order.save({ session: mongoSession });
 
         await this.cartModel
-          .updateOne({ userId: order.userId }, { items: [] }, { session: mongoSession })
+          .updateOne(
+            { userId: order.userId },
+            { items: [] },
+            { session: mongoSession },
+          )
           .exec();
       });
     } catch (err) {
@@ -165,7 +189,9 @@ export class CheckoutService {
       await order.save();
 
       const paymentIntentId =
-        typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id;
+        typeof session.payment_intent === 'string'
+          ? session.payment_intent
+          : session.payment_intent?.id;
       if (paymentIntentId) {
         try {
           await this.stripe.refunds.create({ payment_intent: paymentIntentId });
@@ -180,7 +206,9 @@ export class CheckoutService {
     }
   }
 
-  private async handleCheckoutExpired(session: Stripe.Checkout.Session): Promise<void> {
+  private async handleCheckoutExpired(
+    session: Stripe.Checkout.Session,
+  ): Promise<void> {
     const orderId = session.metadata?.orderId;
     if (!orderId) return;
 

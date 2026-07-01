@@ -1,4 +1,8 @@
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -33,7 +37,11 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
-    const user = await this.usersService.create(dto.email, passwordHash, 'customer');
+    const user = await this.usersService.create(
+      dto.email,
+      passwordHash,
+      'customer',
+    );
 
     return this.buildAuthResult(user);
   }
@@ -44,7 +52,10 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    const passwordMatches = await bcrypt.compare(dto.password, user.passwordHash);
+    const passwordMatches = await bcrypt.compare(
+      dto.password,
+      user.passwordHash,
+    );
     if (!passwordMatches) {
       throw new UnauthorizedException('Invalid email or password');
     }
@@ -74,23 +85,29 @@ export class AuthService {
     const tokens = await this.generateTokens(user);
     return {
       ...tokens,
-      user: { id: user.id as string, email: user.email, role: user.role },
+      user: { id: user.id, email: user.email, role: user.role },
     };
   }
 
   private async generateTokens(user: UserDocument): Promise<AuthTokens> {
-    const payload = { sub: user.id as string, email: user.email, role: user.role };
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+    };
 
     type Duration = `${number}${'s' | 'm' | 'h' | 'd'}`;
 
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
         secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
-        expiresIn: (this.configService.get<string>('JWT_ACCESS_EXPIRES') ?? '15m') as Duration,
+        expiresIn: (this.configService.get<string>('JWT_ACCESS_EXPIRES') ??
+          '15m') as Duration,
       }),
       this.jwtService.signAsync(payload, {
         secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
-        expiresIn: (this.configService.get<string>('JWT_REFRESH_EXPIRES') ?? '7d') as Duration,
+        expiresIn: (this.configService.get<string>('JWT_REFRESH_EXPIRES') ??
+          '7d') as Duration,
       }),
     ]);
 

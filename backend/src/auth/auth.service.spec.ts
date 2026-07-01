@@ -8,7 +8,9 @@ import { UserDocument } from '../users/schemas/user.schema';
 
 describe('AuthService', () => {
   let service: AuthService;
-  let usersService: jest.Mocked<Pick<UsersService, 'findByEmail' | 'create' | 'findById'>>;
+  let usersService: jest.Mocked<
+    Pick<UsersService, 'findByEmail' | 'create' | 'findById'>
+  >;
 
   const makeUser = (overrides: Partial<UserDocument> = {}): UserDocument =>
     ({
@@ -55,7 +57,10 @@ describe('AuthService', () => {
       usersService.findByEmail.mockResolvedValue(makeUser());
 
       await expect(
-        service.signup({ email: 'existing@example.com', password: 'password123' }),
+        service.signup({
+          email: 'existing@example.com',
+          password: 'password123',
+        }),
       ).rejects.toThrow(ConflictException);
 
       expect(usersService.create).not.toHaveBeenCalled();
@@ -63,11 +68,14 @@ describe('AuthService', () => {
 
     it('hashes the password before storing a new user', async () => {
       usersService.findByEmail.mockResolvedValue(null);
-      usersService.create.mockImplementation(
-        async (email, passwordHash, role) => makeUser({ email, passwordHash, role }),
+      usersService.create.mockImplementation((email, passwordHash, role) =>
+        Promise.resolve(makeUser({ email, passwordHash, role })),
       );
 
-      await service.signup({ email: 'new@example.com', password: 'password123' });
+      await service.signup({
+        email: 'new@example.com',
+        password: 'password123',
+      });
 
       const [, storedHash] = usersService.create.mock.calls[0];
       expect(storedHash).not.toBe('password123');
@@ -91,7 +99,10 @@ describe('AuthService', () => {
       );
 
       await expect(
-        service.login({ email: 'existing@example.com', password: 'wrong-password' }),
+        service.login({
+          email: 'existing@example.com',
+          password: 'wrong-password',
+        }),
       ).rejects.toThrow(UnauthorizedException);
     });
 

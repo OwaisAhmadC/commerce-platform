@@ -3,11 +3,7 @@ import { HydratedDocument, Types } from 'mongoose';
 import { toJsonTransform } from '../../common/mongoose/to-json-transform';
 
 export type OrderStatus =
-  | 'pending'
-  | 'processing'
-  | 'shipped'
-  | 'delivered'
-  | 'cancelled';
+  'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
 
 export type OrderDocument = HydratedDocument<Order>;
 
