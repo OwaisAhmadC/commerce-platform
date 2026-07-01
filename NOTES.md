@@ -77,6 +77,88 @@ Running log of decisions, agent workflow, and verification — updated increment
   18 products), confirmed the `email` unique index, `categoryId` index, `name` text index, and `priceCents`
   index all exist exactly as declared, and spot-checked a product document's shape.
 
+## Phase 2 — Auth
+
+**What was built:**
+- `UsersService` (`findByEmail`, `findById`, `create`) added to `UsersModule`, used by auth so the users module
+  owns all direct DB access to its own collection.
+- `AuthModule`: `PassportModule` + `JwtModule.registerAsync` (default secret = access secret, used by the
+  passport-jwt strategy), `AuthService`, `AuthController`, `JwtStrategy`.
+- `AuthService.signup`: rejects duplicate email with `409 Conflict`, hashes password with bcrypt (10 rounds),
+  creates the user as `customer` role (no client-settable role — admins are only created via the seed script,
+  not exposed through signup).
+- `AuthService.login`: `401 Unauthorized` for both "no such email" and "wrong password" — deliberately the same
+  message/status for both so the API doesn't leak which emails are registered.
+- `AuthService.refresh`: verifies the refresh JWT against a separate `JWT_REFRESH_SECRET`, re-issues both
+  tokens. Tokens are stateless (no DB-backed revocation/rotation list) — documented as a scope trade-off below.
+- `JwtStrategy`: on every authenticated request, re-fetches the user from the DB by `payload.sub` rather than
+  trusting the JWT payload blindly — so a deleted user's still-valid access token is rejected immediately
+  instead of working until expiry.
+- `JwtAuthGuard` + `RolesGuard` + `@Roles()` decorator in `src/common/` (shared, not auth-specific) since later
+  phases (admin product/order routes) will reuse `RolesGuard` — `CanActivate` returns true when a route has no
+  `@Roles()` metadata, so it only restricts routes that opt in.
+- Frontend: `lib/api/client.ts` (typed fetch wrapper that surfaces backend validation error arrays and status
+  codes as a typed `ApiError`), `lib/api/auth.ts`, `lib/auth/AuthContext.tsx` (React context, persists
+  `{accessToken, refreshToken, user}` to `localStorage`, hydrates on mount), `/login` and `/signup` pages with
+  client-side validation (email regex, 8-char password minimum) that mirrors the backend's `class-validator`
+  rules, and a `NavBar` component showing logged-in state / log-out.
+
+**Verification performed:**
+- Backend unit tests (`auth.service.spec.ts`): rejects signup with a duplicate email, verifies the stored hash
+  is not the plaintext password (round-trips through `bcrypt.compare`), rejects login for a non-existent email,
+  rejects login with the wrong password, and confirms a correct login returns tokens + user. 6/6 tests passing
+  including the Phase 0 health check tests.
+- Live end-to-end testing against the running backend (not just unit tests) via curl: signup → 201 with tokens;
+  repeat signup with the same email → 409; wrong password → 401; correct login → tokens; `GET /auth/me` with a
+  valid token → 200 with decoded user; same endpoint with no token → 401; weak password on signup → 400. Also
+  confirmed the seeded admin account logs in with `role: "admin"`.
+- Real browser verification (Playwright, driven from a throwaway script, not part of the repo): signed up a
+  fresh account and confirmed the nav bar updates to show the logged-in email; logged out and confirmed the nav
+  reverts to Log in/Sign up; logged in with the seeded customer account and confirmed the nav updates again;
+  attempted login with a wrong password and confirmed an inline error renders without a page crash. Screenshots
+  were inspected directly rather than only trusting the script's pass/fail assertions. The only browser console
+  message was the expected failed-fetch log for the intentional 401, not an unhandled exception.
+  (Note: this sandbox has no outbound internet access to most hosts, but `cdn.playwright.dev` for the Chromium
+  binary download happened to succeed — this was incidental, not something to rely on being available.)
+- Re-ran `npm run seed` after manual/browser testing to reset the DB to the known clean seeded state.
+
+**Things caught/corrected during Phase 2:**
+- `nest g controller/service auth --flat` generated files at `src/auth.controller.ts`/`src/auth.service.ts`
+  (project root) instead of inside `src/auth/`, and wired them into `AppModule` directly instead of
+  `AuthModule` — the `--flat` flag suppresses the module-relative subfolder Nest normally infers. Caught by
+  reading the CLI output and `app.module.ts` diff immediately after generation; fixed by moving the files and
+  rewriting `app.module.ts`/`auth.module.ts` by hand.
+- TypeScript initially rejected `expiresIn: '15m'` (a plain `string`) against `@nestjs/jwt`'s `JwtSignOptions`,
+  which types `expiresIn` as `number | StringValue` (a template-literal type from the `ms` package). Fixed with
+  a local `Duration` template-literal type cast at the two call sites rather than widening the option to `any`.
+- The IDE repeatedly reported stale "Cannot find name 'describe'/'expect'" diagnostics on freshly-written spec
+  files; each time, an actual `npx tsc --noEmit` run showed the file was fine — the diagnostics were just
+  lagging the editor's view of the file. Learned to verify with a real compiler invocation before treating an
+  IDE diagnostic as ground truth, rather than chasing phantom errors.
+- The first attempt at browser verification failed with `net::ERR_CONNECTION_REFUSED` because both dev servers
+  (started as detached background shells in an earlier turn) had died when the underlying shell session was
+  torn down between conversation turns. Fixed by restarting both through the harness's tracked
+  `run_in_background` mechanism instead of a disowned `(cmd &)` subshell, and polling the port before
+  proceeding instead of guessing.
+
+**Scope trade-offs (documented, not silently decided):**
+- Refresh tokens are stateless JWTs with no server-side revocation list. A compromised refresh token remains
+  valid until its 7-day expiry even if the user "logs out" (logout is client-side only: it just clears
+  localStorage). A production version would store refresh tokens (or their hashes) server-side with rotation
+  and revocation on logout/reuse-detection. Acceptable for this assessment's scope given the time budget.
+- Tokens are stored in `localStorage` on the frontend rather than an `httpOnly` cookie, which is more exposed to
+  XSS. Chosen for simplicity (no CSRF-token plumbing, no cross-origin cookie configuration needed between
+  `localhost:3000` and `localhost:4000`) — a real production deployment should prefer `httpOnly`, `Secure`,
+  `SameSite` cookies.
+
+## Design workflow
+
+Decided with the user up front (Phase 2 checkpoint): build functional pages with plain/provisional Tailwind
+styling now to keep momentum on wiring the app end-to-end. Once the core flows work, a separate design agent
+(v0 / Figma AI / Claude Design) will be run by the user to produce the actual visual system, which then gets
+implemented/integrated across storefront + admin. Current page styling should be read as "functionally correct,
+visually provisional" until that pass happens — not the final look.
+
 ## Assumptions (Phase 0)
 
 - Backend and frontend run directly via `npm` on the host (not containerized); only MongoDB runs in Docker.
