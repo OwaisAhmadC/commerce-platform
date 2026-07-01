@@ -98,9 +98,9 @@ made throughout the build.
 | Admin    | admin@example.com   | Admin123!     |
 | Customer | customer@example.com| Customer123!  |
 
-## Payments (Stripe test mode)
+## Payments (Stripe test mode, with an automatic mock fallback)
 
-Checkout uses real Stripe Checkout Sessions in test mode (not a mock). To fully exercise it end-to-end you need:
+Checkout uses real Stripe Checkout Sessions in test mode when configured. To fully exercise the real flow:
 
 1. A free Stripe account and its **test mode** secret key (`sk_test_...`) — set `STRIPE_SECRET_KEY` in `backend/.env`.
 2. The [Stripe CLI](https://docs.stripe.com/stripe-cli) forwarding webhooks to the backend during local dev:
@@ -109,10 +109,13 @@ Checkout uses real Stripe Checkout Sessions in test mode (not a mock). To fully 
    ```
    This prints a webhook signing secret (`whsec_...`) — set it as `STRIPE_WEBHOOK_SECRET` in `backend/.env`.
 
-Without real keys, `backend/.env.example`'s placeholder values (`sk_test_changeme` / `whsec_changeme`) let the app run,
-but creating a checkout session will fail with a clean `503 Payment provider is currently unavailable` error rather
-than a crash — the pending order created for the attempt is automatically rolled back. See `NOTES.md` (Phase 5) for
-how the checkout → webhook → atomic transaction flow was verified without needing real Stripe credentials.
+**Without real keys** (the default, using `backend/.env.example`'s placeholder values), clicking "Pay with card"
+still works end-to-end: the backend catches the Stripe API failure and automatically completes the order via a
+clearly-labeled mock payment — same atomic stock-decrement/cart-clear transaction a real webhook would trigger,
+just skipping the Stripe-hosted page. The confirmation page shows an explicit "Test mode" banner in this case so
+it's never mistaken for a real charge. The moment real keys are added, this fallback stops triggering and the
+real Stripe flow takes over automatically — no code changes needed. See `NOTES.md` (Phase 5 and the post-submission
+addendum) for how both the real webhook path and the mock fallback are tested without needing live Stripe access.
 
 ## Running tests
 

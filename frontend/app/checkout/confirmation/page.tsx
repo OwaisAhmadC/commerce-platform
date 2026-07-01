@@ -15,6 +15,7 @@ function ConfirmationPage() {
   const { accessToken, isLoading: authLoading } = useAuth();
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("session_id");
+  const isMock = searchParams.get("mock") === "1";
 
   const [order, setOrder] = useState<Order | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -64,6 +65,13 @@ function ConfirmationPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
+      {isMock && (
+        <div className="rounded border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          <strong>Test mode:</strong> Stripe test-mode credentials aren&apos;t configured yet, so this order was
+          completed with a simulated payment. No real Stripe charge occurred.
+        </div>
+      )}
+
       {order.status === "pending" ? (
         <>
           <h1 className="text-2xl font-semibold">Processing your payment...</h1>

@@ -3,6 +3,9 @@ import { apiRequest } from "./client";
 export type CheckoutSessionResponse = {
   url: string | null;
   orderId: string;
+  /** True when Stripe wasn't reachable/configured and this order was completed via a
+   *  simulated payment instead of a real Stripe charge. */
+  mock: boolean;
 };
 
 export type OrderStatus = "pending" | "processing" | "shipped" | "delivered" | "cancelled";

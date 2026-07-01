@@ -1,11 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { getModelToken } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import Stripe from 'stripe';
+import * as bcrypt from 'bcrypt';
 import { AppModule } from '../src/app.module';
 import { User, UserDocument } from '../src/users/schemas/user.schema';
 import {
@@ -291,5 +292,111 @@ describe('Checkout webhook (e2e)', () => {
 
     const updatedOrder = await orderModel.findById(order._id).exec();
     expect(updatedOrder?.status).toBe('cancelled');
+  });
+});
+
+/**
+ * Exercises POST /checkout/session end-to-end through the real HTTP surface. The
+ * configured STRIPE_SECRET_KEY in this test environment is always a placeholder, so
+ * Stripe's own API call fails and the mock-payment fallback kicks in -- this is exactly
+ * the path that runs whenever real Stripe credentials haven't been configured yet.
+ */
+describe('Checkout session mock-payment fallback (e2e)', () => {
+  let app: INestApplication<App>;
+  let userModel: Model<UserDocument>;
+  let categoryModel: Model<CategoryDocument>;
+  let productModel: Model<ProductDocument>;
+  let cartModel: Model<CartDocument>;
+  let orderModel: Model<OrderDocument>;
+
+  let userId: string;
+  let accessToken: string;
+  const testEmail = `checkout-mock-test-${Date.now()}@example.com`;
+
+  beforeAll(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication({ rawBody: true });
+    app.setGlobalPrefix('api');
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    );
+    await app.init();
+
+    userModel = moduleFixture.get(getModelToken(User.name));
+    categoryModel = moduleFixture.get(getModelToken(Category.name));
+    productModel = moduleFixture.get(getModelToken(Product.name));
+    cartModel = moduleFixture.get(getModelToken(Cart.name));
+    orderModel = moduleFixture.get(getModelToken(Order.name));
+
+    const passwordHash = await bcrypt.hash('password123', 10);
+    const user = await userModel.create({
+      email: testEmail,
+      passwordHash,
+      role: 'customer',
+    });
+    userId = user.id;
+
+    const loginRes = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ email: testEmail, password: 'password123' });
+    accessToken = (loginRes.body as { accessToken: string }).accessToken;
+  });
+
+  afterAll(async () => {
+    await orderModel.deleteMany({ userId: new Types.ObjectId(userId) });
+    await cartModel.deleteMany({ userId: new Types.ObjectId(userId) });
+    await productModel.deleteMany({ name: /^Mock Checkout Test Product/ });
+    await categoryModel.deleteMany({ name: /^Mock Checkout Test Category/ });
+    await userModel.deleteOne({ _id: userId });
+    await app.close();
+  });
+
+  it('completes the order immediately via a labeled mock payment when Stripe is unreachable', async () => {
+    const category = await categoryModel.create({
+      name: `Mock Checkout Test Category ${Date.now()}`,
+    });
+    const product = await productModel.create({
+      name: 'Mock Checkout Test Product',
+      description: 'test',
+      priceCents: 1500,
+      imageUrl: 'https://example.com/mock.png',
+      categoryId: category._id,
+      stock: 5,
+    });
+
+    await request(app.getHttpServer())
+      .post('/api/cart/items')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ productId: product.id, quantity: 2 })
+      .expect(201);
+
+    const res = await request(app.getHttpServer())
+      .post('/api/checkout/session')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(201);
+
+    const body = res.body as { url: string; orderId: string; mock: boolean };
+    expect(body.mock).toBe(true);
+    expect(body.url).toContain('mock=1');
+    expect(body.url).toContain('/checkout/confirmation');
+
+    const order = await orderModel.findById(body.orderId).exec();
+    expect(order?.status).toBe('processing'); // completed immediately, not left pending
+    expect(order?.stripeSessionId).toMatch(/^mock_/);
+
+    const updatedProduct = await productModel.findById(product._id).exec();
+    expect(updatedProduct?.stock).toBe(3); // 5 - 2, decremented same as the real webhook path
+
+    const cart = await cartModel
+      .findOne({ userId: new Types.ObjectId(userId) })
+      .exec();
+    expect(cart?.items).toHaveLength(0);
   });
 });

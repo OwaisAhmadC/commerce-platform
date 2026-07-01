@@ -741,3 +741,31 @@ genuine JWT; and the "Authorize" flow accepted that token and showed the `bearer
 itself — the request/response mechanics for bearer-authenticated calls were already exhaustively curl-tested
 across every phase above, so the incremental risk here was specifically "does the docs/auth wiring work," which
 was directly verified.
+
+## Post-submission addition — automatic mock-payment fallback for checkout
+
+Phase 5 originally handled a Stripe API failure (e.g. the placeholder `sk_test_changeme` key) by rolling back the
+pending order and returning a clean `503`. That was intentionally safe but meant nobody could actually click
+through checkout without real Stripe credentials. The user asked for a way to actually complete checkout without
+needing to set up real keys first, which is exactly the "clearly-labeled mock payment step" the assessment spec
+explicitly allows as an alternative to real Stripe test mode.
+
+**Design:** `CheckoutService.createCheckoutSession` still attempts a real Stripe Checkout Session first. On
+failure, instead of rolling back, it now falls back to `completeMockCheckout`, which completes the order
+immediately through the *exact same* atomic transaction the real webhook uses (extracted into a shared
+`completeOrderAtomically` method so the two paths can't drift apart from each other) — decrement stock, mark the
+order `processing`, clear the cart — and returns a URL pointing straight at the frontend's own confirmation page
+(no Stripe involved at all) with `mock=1` in the query string. The confirmation page reads that flag and shows an
+explicit amber "Test mode" banner so a simulated payment is never confused with a real one. The moment real Stripe
+credentials are configured, the `try` succeeds and this fallback simply stops triggering — no code changes needed
+to "turn off" mock mode later.
+
+**Verification:** added a new e2e test (`checkout.e2e-spec.ts`, "mock-payment fallback" describe block) that logs
+in a real user, adds a real product to the cart, calls `POST /checkout/session` over real HTTP, and asserts:
+`mock: true` in the response, the returned URL contains `mock=1`, the order is `processing` (not left `pending`)
+immediately, stock was decremented by exactly the ordered quantity, and the cart was cleared — the same
+assertions the webhook-path tests make, confirming the two paths produce identical end states. Backend test count
+is now 20 (was 19). Also ran the full flow live in a real browser: logged in, added an item, clicked "Pay with
+card," confirmed the redirect landed on the confirmation page with the "Test mode" banner and correct order
+details, confirmed stock was actually decremented server-side (not just UI-reported), and confirmed order history
+showed the completed order — screenshot-verified, not just asserted.

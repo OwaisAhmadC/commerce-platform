@@ -4,7 +4,6 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
@@ -16,6 +15,15 @@ import { Order, OrderDocument } from '../orders/schemas/order.schema';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 
 const SESSION_EXPIRY_SECONDS = 30 * 60;
+const MOCK_SESSION_PREFIX = 'mock_';
+
+export interface CheckoutSessionResult {
+  url: string;
+  orderId: string;
+  /** True when Stripe couldn't be reached (e.g. placeholder test keys) and this
+   *  order was completed via a simulated payment instead of a real one. */
+  mock: boolean;
+}
 
 @Injectable()
 export class CheckoutService {
@@ -42,7 +50,10 @@ export class CheckoutService {
       this.configService.get<string>('STRIPE_WEBHOOK_SECRET') ?? '';
   }
 
-  async createCheckoutSession(userId: string, email: string) {
+  async createCheckoutSession(
+    userId: string,
+    email: string,
+  ): Promise<CheckoutSessionResult> {
     const cartView = await this.cartService.getCartView(userId);
     if (cartView.items.length === 0) {
       throw new BadRequestException('Your cart is empty');
@@ -90,18 +101,19 @@ export class CheckoutService {
       order.stripeSessionId = session.id;
       await order.save();
 
-      return { url: session.url, orderId: order.id };
+      return { url: session.url!, orderId: order.id, mock: false };
     } catch (err) {
-      // Roll back the pending order rather than leaving an orphaned record if Stripe
-      // is unreachable or misconfigured (e.g. a placeholder key before real credentials
-      // are added) -- surface a clean error instead of a raw Stripe/network stack trace.
-      await this.orderModel.deleteOne({ _id: order._id }).exec();
-      this.logger.error(
-        `Failed to create Stripe checkout session: ${(err as Error).message}`,
+      // Stripe is unreachable/misconfigured (e.g. placeholder test keys, no real
+      // credentials added yet). Rather than dead-end with an error, fall back to a
+      // clearly-labeled mock payment that completes the order immediately through the
+      // exact same atomic stock-decrement/cart-clear path a real webhook would use.
+      // The moment real Stripe credentials are added, this catch stops firing and the
+      // real flow above takes over automatically -- no code change needed later.
+      this.logger.warn(
+        `Stripe checkout session creation failed (${(err as Error).message}); ` +
+          `falling back to a mock payment for order ${order.id}.`,
       );
-      throw new ServiceUnavailableException(
-        'Payment provider is currently unavailable. Please try again later.',
-      );
+      return this.completeMockCheckout(order);
     }
   }
 
@@ -140,6 +152,32 @@ export class CheckoutService {
     }
   }
 
+  /** Mock payment path: no Stripe involved at all, so there's no payment_intent to
+   *  refund on failure -- an insufficient-stock race here just cancels the order. */
+  private async completeMockCheckout(
+    order: OrderDocument,
+  ): Promise<CheckoutSessionResult> {
+    const mockSessionId = `${MOCK_SESSION_PREFIX}${order._id.toString()}`;
+    order.stripeSessionId = mockSessionId;
+    await order.save();
+
+    try {
+      await this.completeOrderAtomically(order);
+    } catch (err) {
+      this.logger.error(
+        `Mock checkout failed for order ${order.id}: ${(err as Error).message}`,
+      );
+      order.status = 'cancelled';
+      await order.save();
+    }
+
+    return {
+      url: `${this.frontendUrl}/checkout/confirmation?session_id=${mockSessionId}&mock=1`,
+      orderId: order.id,
+      mock: true,
+    };
+  }
+
   private async handleCheckoutCompleted(
     session: Stripe.Checkout.Session,
   ): Promise<void> {
@@ -152,6 +190,35 @@ export class CheckoutService {
       return;
     }
 
+    try {
+      await this.completeOrderAtomically(order);
+    } catch (err) {
+      this.logger.error(
+        `Checkout completion transaction failed for order ${orderId}, cancelling and attempting refund: ${(err as Error).message}`,
+      );
+      order.status = 'cancelled';
+      await order.save();
+
+      const paymentIntentId =
+        typeof session.payment_intent === 'string'
+          ? session.payment_intent
+          : session.payment_intent?.id;
+      if (paymentIntentId) {
+        try {
+          await this.stripe.refunds.create({ payment_intent: paymentIntentId });
+        } catch (refundErr) {
+          this.logger.error(
+            `Failed to issue automatic refund for order ${orderId}: ${(refundErr as Error).message}`,
+          );
+        }
+      }
+    }
+  }
+
+  /** Atomically decrements stock for every line item, marks the order 'processing',
+   *  and clears the user's cart -- shared by both the real Stripe webhook path and the
+   *  mock-payment fallback so the two can never drift out of sync with each other. */
+  private async completeOrderAtomically(order: OrderDocument): Promise<void> {
     const mongoSession = await this.connection.startSession();
     try {
       await mongoSession.withTransaction(async () => {
@@ -181,26 +248,6 @@ export class CheckoutService {
           )
           .exec();
       });
-    } catch (err) {
-      this.logger.error(
-        `Checkout completion transaction failed for order ${orderId}, cancelling and attempting refund: ${(err as Error).message}`,
-      );
-      order.status = 'cancelled';
-      await order.save();
-
-      const paymentIntentId =
-        typeof session.payment_intent === 'string'
-          ? session.payment_intent
-          : session.payment_intent?.id;
-      if (paymentIntentId) {
-        try {
-          await this.stripe.refunds.create({ payment_intent: paymentIntentId });
-        } catch (refundErr) {
-          this.logger.error(
-            `Failed to issue automatic refund for order ${orderId}: ${(refundErr as Error).message}`,
-          );
-        }
-      }
     } finally {
       await mongoSession.endSession();
     }
