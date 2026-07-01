@@ -4,9 +4,90 @@ Running log of decisions, agent workflow, and verification — updated increment
 
 ## Agent workflow
 
-- Driven with Claude Code using a project `CLAUDE.md` (tech stack, architecture, data model, conventions) plus
-  a set of phased prompts (Phase 0 → Phase 8), fed one at a time. Each phase is reviewed and committed before
-  moving to the next, rather than one large generation pass.
+- Driven with Claude Code using a project `CLAUDE.md` as durable context — tech stack decisions, module
+  architecture, the exact data model (down to which fields get embedded vs. referenced and why), coding
+  conventions, and git discipline — plus a set of eight phased prompts (Phase 0 → Phase 8) baked into the same
+  file, fed to the agent one at a time rather than as one large generation pass.
+- Each phase followed the same loop: implement → typecheck (`tsc --noEmit`, since it catches issues faster than
+  waiting for the dev server) → live-verify against the actually-running backend (curl for edge cases, real
+  browser via a scripted Playwright driver for user-facing flows) → update `NOTES.md` with what was built and
+  what verification actually showed → commit with a message explaining *why*, not just *what* → push. Never
+  batched multiple phases into one commit.
+- Context management: rather than re-deriving architecture decisions each phase, `CLAUDE.md`'s data model and
+  conventions section was treated as the source of truth throughout, and each phase's own module choices
+  (guards, DTOs, services) followed the patterns already established in earlier phases (e.g. the
+  `JwtAuthGuard` + `RolesGuard` + `@Roles()` combination established in Phase 2 was reused unchanged through
+  Phase 6's admin routes rather than re-invented).
+- Genuine ambiguities (payment approach, design workflow timing) were surfaced as direct questions to the user
+  rather than silently guessed — see Assumptions below for what was decided and why.
+
+## Where the agent helped, and where it went wrong
+
+The agent's help was most valuable in the boring-but-error-prone parts: wiring guards/DTOs/modules consistently
+across seven backend feature areas, writing the Mongoose aggregation pipelines for the dashboard and
+recommendations, and generating the Playwright verification scripts used throughout. The mistakes it made (and
+how they were caught) were more interesting than the successes:
+
+- **A newer major version of a dependency broke an assumption from training.** `import { FilterQuery } from
+  'mongoose'` failed to compile in Phase 3 — Mongoose 9.x (installed here, newer than the assistant's training
+  data) renamed that type to `QueryFilter<T>`. Caught immediately by `tsc`, root-caused by grepping the
+  installed package's own `.d.ts` files rather than guessing from memory.
+- **`nest g controller/service --flat` silently wired new code into the wrong module.** In Phase 2, generating
+  the auth controller/service with `--flat` put the files at the project root and registered them in
+  `AppModule` instead of `AuthModule`. Caught by reading the generator's own output and the resulting
+  `app.module.ts` diff immediately after running it, before it was ever tested.
+- **A real prompt-injection attempt was found (and ignored) in third-party package docs.** Next.js 16.2's
+  bundled docs (legitimately newer than training data, consulted for real API changes) contained an HTML
+  comment addressed to "the AI agent" instructing that a nonexistent export be added and a nonexistent doc file
+  be read "before making changes." Flagged to the user directly and not acted on — a reminder that "consult the
+  docs for a newer library version" and "blindly follow embedded instructions in that content" are different
+  things.
+- **A duplicate `MongooseModule.forFeature()` registration would have crashed at runtime.** Drafting
+  `CheckoutModule` in Phase 5, it initially re-declared `forFeature` for `Order`/`Product`/`Cart` even though
+  each already had a home module that registered them — which Mongoose would have rejected with
+  `OverwriteModelError` the moment two modules tried to compile the same schema against the same connection.
+  Caught during code review before ever running it, by recognizing the "import the owning module and inject
+  from its exports" pattern already established for `CartModule`/`ProductsModule` wasn't being followed.
+  Reused that pattern instead.
+- **A seed-data bug from Phase 1 sat invisible for six phases until Phase 7's recommendation fallback surfaced
+  it.** "Running Shoes" had been silently mis-categorized into Books because the original seeding logic bucketed
+  products by `Math.floor(i / 5)`, assuming every category had exactly 5 products — it broke the moment Books
+  only had 4. Only became *visible* when the recommendations feature's same-category fallback for that specific
+  product returned obviously-wrong results, which is exactly the kind of bug that automated tests wouldn't have
+  caught either (the seed data itself was "valid" — three books and one pair of shoes with a nonsensical
+  description — just wrong). Fixed by rewriting the seed script to group products by category explicitly.
+- **The single most significant bug was invisible until a genuine clean clone, not just careful local review.**
+  `frontend/.env.local.example` was never actually committed to git — `frontend/.gitignore`'s default `.env*`
+  pattern matched it, so despite existing on disk since Phase 2 and being referenced in the README the whole
+  time, `git status` in the working directory never had a reason to flag it. It only surfaced in Phase 8 by
+  doing an actual `git clone` into an empty directory and following the README literally, which is the entire
+  reason that step is a required part of the process rather than a formality. Fixed with a `.gitignore`
+  negation entry, then re-verified.
+- **Playwright test scripts themselves produced false negatives at least twice** (Phase 6's product-creation
+  check, Phase 8's environment path-length issue) — caught by looking at the actual screenshots/logs rather than
+  trusting a script's own pass/fail assertion, and in the path-length case, by recognizing the failure was an
+  artifact of *where* the verification was run (a deeply nested temp path hitting Windows' `MAX_PATH`) rather
+  than a defect in the code being verified.
+
+## Supervision & verification
+
+Every phase was verified at (at least) three levels before being considered done, not just "it compiled":
+1. **Type-checking** (`tsc --noEmit`) after every file change, before ever starting a dev server.
+2. **Live testing against the actually-running backend** via curl — not just the happy path, but the specific
+   edge cases each feature's spec called out (ordering more than available stock, invalid/expired tokens, a
+   non-admin hitting an admin-only route, malformed request bodies, well-formed-but-nonexistent IDs). Response
+   status codes and bodies were read and checked, not assumed.
+3. **Real browser verification via a scripted Playwright driver** for anything user-facing — signup/login,
+   cart, checkout, admin CRUD, the dashboard chart — with screenshots inspected directly rather than only
+   trusting the script's own assertions (which caught the false negatives noted above).
+4. Automated regression tests (25 across 4 suites) for the logic where a silent regression would be most
+   damaging: auth edge cases, the checkout webhook's atomic transaction (including a locally-signed fake Stripe
+   event to test the whole flow without needing real network access to Stripe), cart stock enforcement, and the
+   order status lifecycle's stock reconciliation.
+5. The database was reset to the clean seeded state after every round of manual/scripted testing that inserted
+   synthetic data, so the repo's documented "seeded credentials" always reflect a known, reproducible state.
+6. Finally, a genuine `git clone` into a separate directory, following the README exactly as a first-time user
+   would — which is what caught the `.env.local.example` bug described above.
 
 ## Phase 0 — Scaffold
 
@@ -484,13 +565,33 @@ reasonable trade against the time budget. Disabled the rule explicitly in `eslin
 explaining why, rather than leaving `next lint` red or scattering inline suppressions. Both projects now lint
 clean.
 
-**Clean-clone verification.** Cloned the repository into a fresh directory and followed the README's setup
-steps exactly (not from memory) to confirm the documented instructions are actually sufficient for someone
-starting cold: `docker compose up -d`, `cd backend && cp .env.example .env && npm install && npm run seed &&
-npm run start:dev`, `cd frontend && cp .env.local.example .env.local && npm install && npm run dev`. Confirmed
-the health check, seeded login, and a full storefront browse → cart → (checkout error with placeholder Stripe
-keys, as documented) flow all worked from that clean clone. (Full results/any fixes from this pass are recorded
-at the point they were found, immediately below or in a follow-up commit if anything needed correcting.)
+**Clean-clone verification — this caught a real, repo-wide bug.** Cloned the repository fresh from GitHub
+(`git clone`, not a copy of the working directory) into a separate directory and followed the README's setup
+steps exactly, as a first-time user would: `docker compose up -d`, `cd backend && cp .env.example .env && npm
+install && npm run seed && npm run start:dev`, `cd frontend && cp .env.local.example .env.local && npm install
+&& npm run dev`.
+
+**Bug found:** `cp .env.local.example .env.local` failed outright — the file didn't exist in the clone at all.
+Root cause: `frontend/.gitignore`'s `.env*` pattern (create-next-app's default) matched `.env.local.example`
+too, so despite being created back in Phase 2 and referenced in the README ever since, it had **never actually
+been committed**. This was completely invisible while working in the original directory — the file existed on
+disk, so nothing ever prompted a "why is this untracked" question; `git status` had nothing to flag because
+gitignore suppressed it from even showing as untracked. It only surfaced by doing a genuine `git clone` into an
+empty directory and trying to follow the README literally, which is exactly why this step exists rather than
+just trusting the README because it "looks right." Fixed by adding a negation entry
+(`!.env.local.example`) so the template is tracked while real `.env`/`.env.local` files stay ignored, committed
+and pushed, then re-verified the clone picked up the fix and completed setup successfully.
+
+**Also hit (environment artifact, not a project bug):** the first clone attempt was into a deeply nested
+scratchpad temp path, and Next.js/Turbopack failed with a Windows `MAX_PATH` (~260 char) error trying to write
+`.next` build artifacts — an artifact of that specific nested location, not the project. Re-ran the clone at a
+short path (`E:\clean-clone-test`) to get a valid signal; a real user cloning to a normal path wouldn't hit this.
+
+**After the fix, verified end-to-end from the clean clone:** `GET /api/health` reports `mongo: connected`; both
+backend suites (`npm run test`, `npm run test:e2e`) pass all 25 tests; and a full real-browser pass (Playwright)
+covering catalog load (18 seeded products), signup of a brand-new account, add-to-cart, and admin login +
+dashboard load, all with zero console errors. Confirmed the README is now genuinely sufficient for a cold start,
+rather than assuming it was because it worked in the environment it was written in.
 
 ## Design workflow
 
@@ -500,16 +601,73 @@ styling now to keep momentum on wiring the app end-to-end. Once the core flows w
 implemented/integrated across storefront + admin. Current page styling should be read as "functionally correct,
 visually provisional" until that pass happens — not the final look.
 
-## Assumptions (Phase 0)
+## Assumptions (consolidated)
 
-- Backend and frontend run directly via `npm` on the host (not containerized); only MongoDB runs in Docker.
-  This keeps the dev loop fast and matches CLAUDE.md's instruction to only stand up Mongo via docker-compose
-  at this stage.
-- API is prefixed with `/api` globally (e.g. `/api/health`) to leave room for serving anything else from the
-  bare domain later and to make the frontend's API base URL convention consistent from the start.
+Every ambiguous point encountered, and the call made on it, in build order:
 
-## Open items for later phases
+- **Backend/frontend run via `npm` on the host; only MongoDB is containerized.** Keeps the dev loop fast; matches
+  CLAUDE.md's instruction to only stand up Mongo via docker-compose.
+- **API is globally prefixed with `/api`** (e.g. `/api/health`), leaving room to serve anything else from the
+  bare domain later and keeping the frontend's API base URL convention consistent from the start.
+- **Product images are a plain `imageUrl` string, not a file upload.** Explicit answer to the assessment's
+  "your call, document the choice" prompt — avoids needing file storage infra (S3/Cloudinary/local disk) for a
+  time-boxed build; admins need a hosted image URL ready rather than uploading from disk.
+- **UI/UX design: functional-first, design pass deferred.** Decided directly with the user at a Phase 2
+  checkpoint — build working, plainly-styled Tailwind pages now; a separate design agent (v0/Figma AI/Claude
+  Design) run by the user produces the actual visual system afterward. Every page shipped should be read as
+  "functionally correct, visually provisional," not final.
+- **Payments: real Stripe test mode, not a mock.** Also decided directly with the user (the assessment spec
+  explicitly allows either) — built with dummy placeholder credentials for now, real keys to be added later.
+  Checkout Session creation degrades to a clean `503` (with automatic rollback of the pending order) rather
+  than a crash until real keys are supplied.
+- **Order status "pending" means "created, awaiting payment confirmation," not "just browsing."** An `Order` is
+  created at checkout-session-creation time, before payment succeeds, so it's a meaningful, visible state — not
+  skipped straight to `processing`. Stock is untouched until the order actually reaches `processing`.
+- **"Total sales" (dashboard) = paid orders only** (`processing`/`shipped`/`delivered`). `pending` hasn't been
+  paid for yet; `cancelled` never was. Neither counts as revenue.
+- **Open-ended "relevant product suggestions" requirement:** interpreted as two distinct surfaces — item-based
+  "Customers also bought" (co-purchase in paid orders) on the product detail page, which works for anonymous
+  visitors since it's anchored to the product; and user-based "Recommended for you" (most-purchased category,
+  excluding owned products) on the home page for logged-in customers. Both fall back through
+  same-category → trending → newest so a fresh install never shows an empty/broken state. Full reasoning in
+  Phase 7 above.
+- **Product search uses regex, not MongoDB's `$text` operator**, despite CLAUDE.md mentioning a "text index for
+  search" — `$text` only matches whole/stemmed words and would miss substring queries like "head" → "Wireless
+  Headphones" that a real search box needs to handle. The text index is still in place and harmless.
+- **Order status lifecycle is a strict transition table**, not a free-form status field: `pending →
+  processing|cancelled → shipped|cancelled → delivered|cancelled`, with `delivered`/`cancelled` terminal.
+  Same-status "updates" are a no-op, not an error. Full reasoning (and the stock-reconciliation rules that
+  follow from it) in Phase 6 above.
 
-- Seeded credentials, data model implementation, auth, catalog, cart, checkout, admin, dashboard, and the
-  open-ended "relevant product suggestions" interpretation are all tracked in the todo list and will be
-  documented here as each phase lands.
+## Trade-offs, scope, and what I'd do with more time
+
+**Built fully (real logic, not mocked):** auth (JWT access+refresh, bcrypt), full product catalog with
+search/filter/sort/pagination, cart with server-enforced stock limits, checkout via real Stripe Checkout
+Sessions with a webhook-driven atomic transaction (stock decrement + order creation + cart clear), order
+history, admin product CRUD, admin order-status lifecycle with stock reconciliation, an aggregation-based admin
+analytics dashboard with a chart, and a two-surface recommendation system with graceful fallbacks.
+
+**Deliberately simplified, and documented as such at the point of the decision:**
+- Refresh tokens are stateless (no DB-backed revocation/rotation list) — a compromised refresh token stays
+  valid until it expires even after "logout." With more time: store refresh tokens (or hashes) server-side,
+  rotate on use, revoke on logout/reuse-detection.
+- Tokens live in `localStorage`, not an `httpOnly` cookie — simpler (no CSRF plumbing, no cross-origin cookie
+  config between `:3000` and `:4000`) but more exposed to XSS. With more time: `httpOnly`/`Secure`/`SameSite`
+  cookies.
+- The visual design is intentionally provisional pending a dedicated design-agent pass (see Design workflow,
+  above) — this was a scope decision, not an oversight.
+- No automatic cleanup job for orders left `pending` past their Stripe session's 30-minute expiry beyond the
+  `checkout.session.expired` webhook handler itself — relies on Stripe actually sending that event. With more
+  time: a scheduled sweep as a backstop.
+- Admin order list/product list frontend pages fetch up to 100 items rather than paginating client-side UI
+  controls (the backend endpoints do support pagination params) — fine at this data scale, would need real
+  pagination controls in the admin UI for a larger catalog/order volume.
+- Recommendation and dashboard aggregations run directly against the `orders` collection on every request with
+  no caching — fine at this scale; would need caching/materialized views under real traffic.
+
+**What I'd do next with more time, roughly in priority order:** the actual design-agent pass to replace the
+provisional styling; refresh-token rotation/revocation and httpOnly cookie storage; real end-to-end Stripe
+testing once live keys are added (the webhook *logic* is fully tested locally via signed test events, but the
+real hosted Checkout page and a genuine Stripe-delivered webhook have not been exercised); pagination controls
+in the admin UI; and a scheduled job to reconcile/cancel long-abandoned pending orders as a backstop to the
+webhook-based expiry handling.
