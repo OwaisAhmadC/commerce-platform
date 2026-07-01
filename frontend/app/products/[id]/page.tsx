@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { getProduct } from "../../../lib/api/products";
 import { ApiError } from "../../../lib/api/client";
 import { formatPriceCents } from "../../../lib/format";
+import { AddToCartForm } from "../../../components/AddToCartForm";
 
 export default async function ProductDetailPage({
   params,
@@ -51,6 +52,7 @@ export default async function ProductDetailPage({
             <span className="text-red-600">Out of stock</span>
           )}
         </p>
+        <AddToCartForm productId={product.id} stock={product.stock} />
       </div>
     </main>
   );

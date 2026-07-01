@@ -202,6 +202,47 @@ Running log of decisions, agent workflow, and verification — updated increment
 - Caught a self-inflicted duplicate-fetch bug while writing the catalog page: an early draft called
   `listCategories()` twice in the same `useEffect` (one result discarded). Removed before it shipped.
 
+## Phase 4 — Cart
+
+**What was built:**
+- `CartService` builds a "hydrated" cart view on every read (`{ items: [{productId, name, imageUrl, priceCents,
+  quantity, stock, lineTotalCents}], totalCents }`) by looking up current product data for the cart's stored
+  `{productId, quantity}` pairs — the cart itself never stores a price snapshot (unlike orders), so line totals
+  always reflect the product's live price, which is the correct behavior before checkout.
+- Stock is enforced server-side on both add and update: `POST /cart/items` sums the requested quantity with
+  whatever's already in the cart for that product and rejects with `409` if the total would exceed
+  `product.stock`; `PATCH /cart/items/:productId` rejects the same way for the new absolute quantity. Client-side
+  quantity inputs are also capped at `stock` for UX, but the server is the actual authority — verified by testing
+  the same limits via curl directly (see below).
+- Defensive consistency check: if a product referenced in someone's cart was deleted after being added (not
+  currently possible via the UI since there's no delete-product endpoint yet, but will be once Phase 6 admin CRUD
+  exists), `buildView` silently drops it from both the returned view and the persisted cart array rather than
+  crashing or returning a broken line item.
+- All cart routes (`GET /cart`, `POST /cart/items`, `PATCH /cart/items/:productId`,
+  `DELETE /cart/items/:productId`) sit behind `JwtAuthGuard` at the controller level and always operate on
+  `req.user.userId` from the token — there is no way to pass another user's id in, so cart ownership is
+  enforced by construction, not by an extra check.
+- Frontend: `lib/api/cart.ts`, an `AddToCartForm` client component embedded in the (Server Component) product
+  detail page, a `Cart` link in the nav, and `/cart` page with per-line quantity editing and removal, showing
+  line totals and an order total.
+- Fixed the seed script to also clear the `carts` collection. It previously only cleared users/categories/
+  products; since re-seeding creates the customer user with a **new** `_id`, any previously-seeded cart would
+  become an orphaned document tied to a `userId` nothing points to anymore. Caught this by reasoning about
+  re-run behavior, not by hitting a visible bug — worth calling out since orphaned data like this is exactly the
+  kind of "silent" issue that doesn't show up until much later.
+
+**Verification performed:**
+- Live curl flow against the running backend: `GET /cart` with no token → 401; empty cart for a fresh user;
+  add 2 of a product, add 3 more (confirmed quantities merge to 5, not two separate line items); attempt to add
+  enough to exceed stock → 409; update quantity to exactly the stock limit → succeeds; update one over the limit
+  → 409; remove the item → empty cart; update a product no longer in the cart → 404; add with `quantity: 0` →
+  400 (DTO validation); add a well-formed but non-existent product id → 404.
+- Real browser verification (Playwright): confirmed the cart page prompts to log in when logged out; logged in,
+  added a product with stock via the detail page's quantity selector, confirmed the button shows "Added!";
+  opened `/cart` and confirmed the correct quantity and line total rendered; changed the quantity input and
+  confirmed the total updated; removed the item and confirmed the "cart is empty" state. Zero browser console
+  errors across the whole flow.
+
 ## Design workflow
 
 Decided with the user up front (Phase 2 checkpoint): build functional pages with plain/provisional Tailwind

@@ -14,10 +14,13 @@ export function NavBar() {
       <div className="flex items-center gap-4 text-sm">
         {isLoading ? null : user ? (
           <>
+            <Link href="/cart" className="underline">
+              Cart
+            </Link>
             <span className="text-zinc-600 dark:text-zinc-400">
               {user.email} ({user.role})
             </span>
-            <button onClick={logout} className="underline">
+            <button type="button" onClick={logout} className="underline">
               Log out
             </button>
           </>
