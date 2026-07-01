@@ -47,7 +47,19 @@ Full-stack e-commerce platform (customer storefront + admin panel) built for the
 
 ## Seeded credentials
 
-_Not yet available — added in Phase 1 (seed script)._
+Run the seed script after starting the backend's database connection is configured:
+
+```bash
+cd backend
+npm run seed
+```
+
+This clears and repopulates `users`, `categories`, and `products`, and prints credentials to the console:
+
+| Role     | Email               | Password      |
+|----------|---------------------|---------------|
+| Admin    | admin@example.com   | Admin123!     |
+| Customer | customer@example.com| Customer123!  |
 
 ## Running tests
 

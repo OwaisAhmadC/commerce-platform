@@ -51,6 +51,32 @@ Running log of decisions, agent workflow, and verification — updated increment
 - Docker Desktop was not running at task start; started it and polled `docker info` until ready rather than
   guessing a fixed sleep duration.
 
+## Phase 1 — Database + Seed
+
+**What was built:**
+- Nest CLI-generated modules for `users`, `categories`, `products`, `cart`, `orders`, each wired with
+  `MongooseModule.forFeature` and exporting `MongooseModule` so other modules can inject the same models later
+  (e.g. cart/orders will need the `Product` model to check stock).
+- Schemas per CLAUDE.md's data model, colocated in each module's `schemas/` folder:
+  - `User`: unique email index, bcrypt hash stored (never the plaintext password), `role` enum.
+  - `Category`: unique name.
+  - `Product`: text index on `name` (search), index on `categoryId`, index on `priceCents` (filter/sort).
+  - `Cart`: one document per user (`userId` unique index), items embedded as a subdocument array — not a
+    separate collection, per CLAUDE.md's "Mongo-idiomatic" guidance.
+  - `Order`: embeds a snapshot of `name` + `priceCentsAtPurchase` per item, not just a `productId` reference —
+    intentional, so historical orders stay accurate if a product's price or name changes later.
+- Seed script (`backend/src/database/seed.ts`, run via `npm run seed`): clears and repopulates users,
+  categories, products. Creates 1 admin + 1 customer (bcrypt-hashed passwords), 4 categories, 18 products with
+  varied price/stock (including at least one zero-stock item, useful later for testing the "out of stock"
+  checkout edge case). Prints seeded credentials to the console on every run.
+
+**Verification performed:**
+- `npx tsc --noEmit` — clean.
+- Ran `npm run seed` against the real Mongo container and inspected the result directly via `mongosh`
+  (not just trusting the script's own console output): confirmed document counts (2 users / 4 categories /
+  18 products), confirmed the `email` unique index, `categoryId` index, `name` text index, and `priceCents`
+  index all exist exactly as declared, and spot-checked a product document's shape.
+
 ## Assumptions (Phase 0)
 
 - Backend and frontend run directly via `npm` on the host (not containerized); only MongoDB runs in Docker.
