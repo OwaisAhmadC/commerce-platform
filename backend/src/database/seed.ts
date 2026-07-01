@@ -16,9 +16,27 @@ const CUSTOMER_PASSWORD = 'Customer123!';
 
 const CATEGORY_NAMES = ['Electronics', 'Home & Kitchen', 'Books', 'Sportswear'];
 
-function pick<T>(arr: T[], i: number): T {
-  return arr[i % arr.length];
-}
+// Grouped explicitly by category rather than bucketed by array position -- a prior
+// version used Math.floor(i / 5), which silently mis-assigned "Running Shoes" into
+// Books once the category group sizes stopped being an even multiple of 5.
+const PRODUCTS_BY_CATEGORY: Record<string, string[]> = {
+  Electronics: [
+    'Wireless Headphones',
+    'Bluetooth Speaker',
+    '4K Monitor',
+    'Mechanical Keyboard',
+    'USB-C Hub',
+  ],
+  'Home & Kitchen': [
+    'Non-Stick Frying Pan',
+    'Ceramic Mug Set',
+    'Electric Kettle',
+    'Cutting Board Set',
+    'Air Fryer',
+  ],
+  Books: ['The Pragmatic Programmer', 'Clean Code', 'Atomic Habits', 'A Brief History of Time'],
+  Sportswear: ['Running Shoes', 'Yoga Mat', 'Adjustable Dumbbells', 'Cycling Helmet'],
+};
 
 async function seed() {
   const app = await NestFactory.createApplicationContext(AppModule, {
@@ -46,36 +64,25 @@ async function seed() {
   );
 
   console.log('Seeding products...');
-  const productNames = [
-    'Wireless Headphones',
-    'Bluetooth Speaker',
-    '4K Monitor',
-    'Mechanical Keyboard',
-    'USB-C Hub',
-    'Non-Stick Frying Pan',
-    'Ceramic Mug Set',
-    'Electric Kettle',
-    'Cutting Board Set',
-    'Air Fryer',
-    'The Pragmatic Programmer',
-    'Clean Code',
-    'Atomic Habits',
-    'A Brief History of Time',
-    'Running Shoes',
-    'Yoga Mat',
-    'Adjustable Dumbbells',
-    'Cycling Helmet',
-  ];
+  const categoryIdByName = new Map(
+    categories.map((c) => [c.name, (c as unknown as { _id: Types.ObjectId })._id]),
+  );
 
-  const products: Array<Partial<Product> & { categoryId: Types.ObjectId }> =
-    productNames.map((name, i) => ({
-      name,
-      description: `${name} — a great addition to your ${pick(CATEGORY_NAMES, Math.floor(i / 5)).toLowerCase()} collection.`,
-      priceCents: 1999 + i * 731,
-      imageUrl: `https://picsum.photos/seed/${encodeURIComponent(name)}/600/600`,
-      categoryId: (pick(categories, Math.floor(i / 5)) as { _id: Types.ObjectId })._id,
-      stock: (i % 6) * 5 + (i % 3 === 0 ? 0 : 10),
-    }));
+  const products: Array<Partial<Product> & { categoryId: Types.ObjectId }> = [];
+  let i = 0;
+  for (const categoryName of CATEGORY_NAMES) {
+    for (const name of PRODUCTS_BY_CATEGORY[categoryName]) {
+      products.push({
+        name,
+        description: `${name} — a great addition to your ${categoryName.toLowerCase()} collection.`,
+        priceCents: 1999 + i * 731,
+        imageUrl: `https://picsum.photos/seed/${encodeURIComponent(name)}/600/600`,
+        categoryId: categoryIdByName.get(categoryName)!,
+        stock: (i % 6) * 5 + (i % 3 === 0 ? 0 : 10),
+      });
+      i += 1;
+    }
+  }
 
   await productModel.insertMany(products);
 

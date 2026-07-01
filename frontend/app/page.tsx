@@ -5,7 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { listProducts, Product, ProductSort } from "../lib/api/products";
 import { listCategories, Category } from "../lib/api/categories";
 import { ProductCard } from "../components/ProductCard";
+import { ProductGrid } from "../components/ProductGrid";
 import { ApiError } from "../lib/api/client";
+import { getForMe, getTrending } from "../lib/api/recommendations";
+import { useAuth } from "../lib/auth/AuthContext";
 
 const SORT_OPTIONS: { value: ProductSort; label: string }[] = [
   { value: "newest", label: "Newest" },
@@ -16,6 +19,7 @@ const SORT_OPTIONS: { value: ProductSort; label: string }[] = [
 function CatalogPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user, accessToken } = useAuth();
 
   const search = searchParams.get("search") ?? "";
   const categoryId = searchParams.get("categoryId") ?? "";
@@ -31,10 +35,19 @@ function CatalogPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [recommended, setRecommended] = useState<Product[]>([]);
+
+  const isDefaultView = !search && !categoryId && !minPriceCents && !maxPriceCents && page === 1;
 
   useEffect(() => {
     listCategories().then(setCategories).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!isDefaultView) return;
+    const request = accessToken ? getForMe(accessToken) : getTrending();
+    request.then(setRecommended).catch(() => {});
+  }, [isDefaultView, accessToken]);
 
   useEffect(() => {
     setIsLoading(true);
@@ -71,6 +84,13 @@ function CatalogPage() {
 
   return (
     <main className="flex flex-1 flex-col gap-6 p-6">
+      {isDefaultView && (
+        <ProductGrid
+          title={user ? "Recommended for you" : "Trending now"}
+          products={recommended}
+        />
+      )}
+
       <form
         onSubmit={(e) => {
           e.preventDefault();

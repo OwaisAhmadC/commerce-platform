@@ -371,6 +371,72 @@ any admin-only endpoint gets a real `403` from the backend regardless of what th
   "processing" updated the row's status and the dropdown's own next-option list refreshed correctly.
 - Reset the seeded DB to a clean state after each round of manual/scripted testing.
 
+## Phase 7 — Admin Dashboard + Recommendations (the open-ended requirement)
+
+### Admin dashboard
+
+Backend is a single `GET /admin/dashboard` (admin-only) using one MongoDB aggregation with `$facet` so all
+three stats come back in one round trip: total sales, order count by status, and top 5 products by quantity
+sold. **"Total sales" is deliberately defined as the sum of `totalCents` only for orders in
+`processing`/`shipped`/`delivered`** — a `pending` order hasn't been paid for yet and a `cancelled` one never
+completed, so neither should count as revenue. `orderCountByStatus` is initialized with all five statuses at 0
+before merging in the aggregation's results, so the frontend never has to handle a missing key. Frontend uses
+`recharts` for a bar chart of order count by status, plus a top-selling-products table.
+
+### Open-ended requirement: "customers should see relevant product suggestions"
+
+**Interpretation chosen:** two different recommendation surfaces, each answering a different question about
+"relevant":
+
+1. **Product detail page — "Customers also bought"** (item-to-item, works for anonymous visitors too): for
+   the product being viewed, find other products that co-occurred with it in the same paid order, ranked by
+   co-occurrence count (classic "frequently bought together"). This answers "given this specific product,
+   what else is relevant" — useful regardless of who's looking, which matters since a lot of storefront traffic
+   is anonymous/first-visit.
+2. **Home page — "Recommended for you" / "Trending now"** (user-to-item): for a logged-in customer, find the
+   product category they've bought from most and recommend other products in that category they don't already
+   own. This answers "given *this person's* history, what's relevant to them," which is closer to the literal
+   wording of the requirement ("relevant to them").
+
+**Fallback chain (this matters more than the primary logic, since a fresh seed has zero order history):** both
+paths degrade gracefully rather than returning nothing:
+- Detail page: no co-purchase data for this product yet → same-category products.
+- Home page, logged-in: no purchase history yet → site-wide trending (top-selling products).
+- Trending itself: no sales data at all yet (a brand new install) → newest products.
+Every one of these was actually exercised and verified (see below) rather than just written and assumed to work.
+
+**Why this interpretation and not something else:** a pure "based on browsing history" approach would need
+session/view tracking that doesn't exist yet and felt like scope creep for the time available; a pure
+"frequently bought together" system alone doesn't help a logged-in customer on the home page where there's no
+single product to anchor off of. The two-surface approach uses the data that already exists in the domain model
+(orders, categories) without introducing new tracking infrastructure, while still producing genuinely different,
+sensibly-reasoned recommendations in the two places a customer is most likely to look for them.
+
+**Verification performed:**
+- Live curl testing of every fallback path against a freshly seeded (order-less) DB: dashboard returns clean
+  zeroes/empty array (not an error) with no orders; related-products for a product falls back to same-category;
+  trending falls back to newest.
+- Inserted synthetic paid orders directly (two different fake customers both buying Headphones+Speaker, one of
+  them also buying Headphones+Keyboard; the seeded customer buying two Books) and re-tested: co-purchase
+  recommendations for Headphones correctly ranked Speaker (2 co-occurrences) above Keyboard (1); the seeded
+  customer's personalized recommendations correctly surfaced the two *other* Books, excluding the ones already
+  purchased; the dashboard's total sales, order-by-status counts, and top-products list were all hand-verified
+  against the exact synthetic order amounts (down to the cent) rather than just eyeballed.
+- Real browser verification (Playwright): guest home page shows "Trending now," a logged-in customer's home
+  page shows "Recommended for you," a product detail page shows "Customers also bought" populated with
+  same-category items (screenshot-confirmed), and the admin dashboard's bar chart actually renders an SVG
+  (`.recharts-surface`), not just a data-less shell.
+- Reset the DB to the clean seed state after each round of synthetic-data testing.
+
+**A genuine bug this phase caught, unrelated to recommendations themselves:** testing the category-based
+fallback surfaced that the Phase 1 seed script had mis-categorized "Running Shoes" into **Books** — its
+description literally read *"a great addition to your books collection."* The root cause was the original
+seeding logic bucketing products by `Math.floor(i / 5)` (assuming exactly 5 products per category), which broke
+once Books/Sportswear only had 4 products each, shifting every later product's category assignment by one.
+Fixed by rewriting the seed script to group products by category explicitly (`PRODUCTS_BY_CATEGORY: Record<string, string[]>`)
+instead of relying on positional arithmetic — a good example of an existing, already-shipped bug that only
+became *visible* once a feature (recommendations) exercised the data in a new way.
+
 ## Design workflow
 
 Decided with the user up front (Phase 2 checkpoint): build functional pages with plain/provisional Tailwind

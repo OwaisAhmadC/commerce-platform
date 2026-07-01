@@ -10,6 +10,8 @@ import { CartModule } from './cart/cart.module';
 import { OrdersModule } from './orders/orders.module';
 import { AuthModule } from './auth/auth.module';
 import { CheckoutModule } from './checkout/checkout.module';
+import { AdminModule } from './admin/admin.module';
+import { RecommendationsModule } from './recommendations/recommendations.module';
 
 @Module({
   imports: [
@@ -28,6 +30,8 @@ import { CheckoutModule } from './checkout/checkout.module';
     OrdersModule,
     AuthModule,
     CheckoutModule,
+    AdminModule,
+    RecommendationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
