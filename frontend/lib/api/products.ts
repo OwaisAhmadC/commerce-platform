@@ -48,3 +48,24 @@ export function listProducts(params: ListProductsParams = {}) {
 export function getProduct(id: string) {
   return apiRequest<Product>(`/products/${id}`);
 }
+
+export type ProductInput = {
+  name: string;
+  description: string;
+  priceCents: number;
+  imageUrl: string;
+  categoryId: string;
+  stock: number;
+};
+
+export function createProduct(token: string, input: ProductInput) {
+  return apiRequest<Product>("/products", { method: "POST", token, body: input });
+}
+
+export function updateProduct(token: string, id: string, input: Partial<ProductInput>) {
+  return apiRequest<Product>(`/products/${id}`, { method: "PATCH", token, body: input });
+}
+
+export function deleteProduct(token: string, id: string) {
+  return apiRequest<void>(`/products/${id}`, { method: "DELETE", token });
+}

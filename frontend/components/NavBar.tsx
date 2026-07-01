@@ -20,6 +20,11 @@ export function NavBar() {
             <Link href="/orders" className="underline">
               Orders
             </Link>
+            {user.role === "admin" && (
+              <Link href="/admin/products" className="underline">
+                Admin
+              </Link>
+            )}
             <span className="text-zinc-600 dark:text-zinc-400">
               {user.email} ({user.role})
             </span>

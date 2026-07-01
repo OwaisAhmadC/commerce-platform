@@ -3,6 +3,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, QueryFilter, Types } from 'mongoose';
 import { Product, ProductDocument } from './schemas/product.schema';
 import { ListProductsQueryDto } from './dto/list-products-query.dto';
+import { CreateProductDto } from './dto/create-product.dto';
+import { UpdateProductDto } from './dto/update-product.dto';
 
 export interface PaginatedResult<T> {
   items: T[];
@@ -67,6 +69,30 @@ export class ProductsService {
       throw new NotFoundException('Product not found');
     }
     return product;
+  }
+
+  create(dto: CreateProductDto): Promise<ProductDocument> {
+    return this.productModel.create({
+      ...dto,
+      categoryId: new Types.ObjectId(dto.categoryId),
+    });
+  }
+
+  async update(id: string, dto: UpdateProductDto): Promise<ProductDocument> {
+    const product = await this.findById(id);
+    if (dto.name !== undefined) product.name = dto.name;
+    if (dto.description !== undefined) product.description = dto.description;
+    if (dto.priceCents !== undefined) product.priceCents = dto.priceCents;
+    if (dto.imageUrl !== undefined) product.imageUrl = dto.imageUrl;
+    if (dto.categoryId !== undefined) product.categoryId = new Types.ObjectId(dto.categoryId);
+    if (dto.stock !== undefined) product.stock = dto.stock;
+    await product.save();
+    return product;
+  }
+
+  async remove(id: string): Promise<void> {
+    const product = await this.findById(id);
+    await product.deleteOne();
   }
 }
 

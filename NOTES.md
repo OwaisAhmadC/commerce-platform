@@ -311,6 +311,66 @@ status update from the webhook can lag slightly behind the redirect back from St
 pending/processing/cancelled), `/orders` (history list) and `/orders/:id` (detail) — both scoped to the logged-in
 user server-side (ownership enforced in `OrdersService`, not just hidden in the UI).
 
+## Phase 6 — Admin Panel
+
+**Product images:** stored as a plain `imageUrl` string (validated as a URL server-side), not a file upload —
+this was already decided back in Phase 1's data model and carried through consistently; documented here as the
+explicit answer to the assessment's "upload, or image URL — your call, document the choice" prompt. Chosen for
+scope: an upload flow needs storage (S3/Cloudinary/local disk), which is a meaningful chunk of infrastructure
+for a time-boxed assessment and orthogonal to what's being evaluated. Trade-off: admins must have a hosted image
+URL ready (e.g. from any image host) rather than uploading directly from their machine.
+
+**Product CRUD:** `POST/PATCH/DELETE /products*` added behind `JwtAuthGuard` + `RolesGuard` + `@Roles('admin')`
+(the read endpoints stay public, unchanged from Phase 3). `ProductsService.update` applies only the fields
+present in the DTO (partial update) rather than requiring the full object every time. Deleting a product doesn't
+need special cleanup: carts already prune references to deleted products on read (Phase 4's `buildView`), and
+orders keep their own name/price snapshot independent of the live product, so historical orders stay accurate
+even after the product is gone.
+
+**Order status lifecycle — this is the part worth explaining carefully.** `OrdersService.updateStatus` enforces
+an explicit transition table (`pending → processing|cancelled`, `processing → shipped|cancelled`,
+`shipped → delivered|cancelled`, `delivered`/`cancelled` terminal) and rejects anything else with `409`, rather
+than letting an admin set status to any arbitrary value. The harder question was **what happens to stock**
+across these transitions, since Phase 5's webhook already decrements stock once, at the moment an order first
+becomes `processing`. Two consequences follow directly from that:
+- If an admin manually moves a still-`pending` order straight to `processing` (a legitimate override, e.g.
+  confirming a manual/phone order that never went through Stripe), stock must be decremented **at that moment**
+  — otherwise that order would silently never account for the stock it consumes. Implemented with the exact
+  same atomic conditional-update pattern as the checkout webhook, in its own Mongo transaction; if stock can't
+  cover it, the transition is rejected with `409` instead of silently overselling.
+- If an order that's already in `processing` or `shipped` (i.e. already took stock) gets moved to `cancelled`,
+  that stock needs to come back, or it's permanently lost to inventory with nothing to show for it. Implemented
+  as the mirror operation: increment stock back for each line item in a transaction, then set the status.
+  `pending → cancelled` skips this entirely since no stock was ever taken for a still-pending order.
+- All other transitions (`processing → shipped`, `shipped → delivered`) touch only the status field — no stock
+  movement, since nothing about the item counts changes at those points.
+
+Also made same-status "transitions" a no-op (return the order unchanged) rather than a `409`, since an admin's
+UI resubmitting the current value shouldn't read as an error.
+
+**Access control:** verified this is enforced by the guard, not just hidden in the UI — a customer JWT hitting
+any admin-only endpoint gets a real `403` from the backend regardless of what the frontend shows. The frontend's
+`AdminGuard` component (blocks non-admin users from rendering `/admin/*` pages) and the nav bar's conditional
+"Admin" link are UX conveniences only; they are not the security boundary and are documented as such.
+
+**Verification performed:**
+- Live curl testing of the full matrix: customer → `403` on create/update product and on admin order routes;
+  admin → create/update/delete product all succeed, with delete confirmed via a follow-up `404`; invalid create
+  payload → `400`.
+- Full order lifecycle tested live end-to-end via curl against two seeded orders inserted directly (since real
+  Stripe checkout isn't available with placeholder keys): `pending → processing` correctly decremented stock
+  (verified via the products endpoint before/after), `processing → shipped → delivered` succeeded, then
+  `delivered → pending` correctly rejected with `409`. Separately verified `pending → processing → cancelled` on
+  a second order restores the exact stock count that was taken (19 → 20), confirming the reconciliation logic is
+  symmetric, not just "always add/always subtract."
+- Real browser verification (Playwright): confirmed a logged-in customer visiting `/admin/products` sees "Access
+  denied" and no "Admin" link in the nav; logged in as admin, created a product (confirmed by screenshot — the
+  test script's own text-match assertion had a timing false-negative here, caught by looking at the actual
+  screenshot rather than trusting the assertion blindly), edited it, deleted it (confirmed gone, with all 18
+  seeded products otherwise untouched), and exercised the order status dropdown on a real order — selecting
+  "processing" updated the row's status and the dropdown's own next-option list refreshed correctly.
+- Reset the seeded DB to a clean state after each round of manual/scripted testing.
+
 ## Design workflow
 
 Decided with the user up front (Phase 2 checkpoint): build functional pages with plain/provisional Tailwind
