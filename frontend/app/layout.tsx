@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "../lib/auth/AuthContext";
-import { NavBar } from "../components/NavBar";
+import { StorefrontChrome } from "../components/layout/StorefrontChrome";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Commerce Platform",
-  description: "Mini e-commerce platform — assessment build",
+  title: "Cartly",
+  description: "Everyday essentials — mini e-commerce platform",
 };
 
 export default function RootLayout({
@@ -31,8 +31,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <AuthProvider>
-          <NavBar />
-          {children}
+          <StorefrontChrome>{children}</StorefrontChrome>
         </AuthProvider>
       </body>
     </html>

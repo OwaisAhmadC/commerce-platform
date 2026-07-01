@@ -601,6 +601,56 @@ styling now to keep momentum on wiring the app end-to-end. Once the core flows w
 implemented/integrated across storefront + admin. Current page styling should be read as "functionally correct,
 visually provisional" until that pass happens — not the final look.
 
+**The design pass landed:** the user ran Claude Design to produce a full navigation system ("Cartly Navigation
+System" — storefront header incl. a mobile drawer variant, storefront footer, and a dark/collapsible admin
+sidebar+topbar) and handed it back as a spec (PDF export + a claude.ai/design link) with an explicit instruction
+to implement it exactly, not restyle or reinterpret it, and to leave cart/auth/API logic untouched.
+
+**What was built, reusing existing logic rather than re-architecting it:**
+- `components/layout/Header.tsx` + `MobileDrawer.tsx`: logo, desktop nav, a live Categories dropdown (from the
+  existing `listCategories()` call, not hardcoded), a search bar wired to the existing `/?search=` catalog
+  filter, the category pill row, and an avatar menu whose "Log out" item calls the *existing* `logout()` from
+  `AuthContext` — no new auth logic. Mobile collapses into a hamburger-triggered slide-in drawer with the same
+  data.
+- `components/layout/Footer.tsx`: newsletter band, quick links, a *live* categories column, and a support/legal
+  column.
+- `components/layout/AdminSidebar.tsx` + `AdminTopbar.tsx` + `AdminShell.tsx`: dark collapsible sidebar (state
+  lifted into `AdminShell` so the topbar's toggle button can control the sidebar's width) with real nav items
+  for Dashboard/Products/Orders, replacing the plain text nav from Phase 6.
+- `app/layout.tsx` now wraps children in `StorefrontChrome`, which renders `Header`/`Footer` for storefront
+  routes and nothing extra for `/admin/*` (which gets its own full-screen `AdminShell` instead) — matching the
+  design's explicit intent that admin be "visually distinct," not a variation of the storefront chrome. The old
+  plain-text `NavBar.tsx` was deleted (fully superseded, no remaining references).
+
+**Cart badge — a genuine judgment call, since "bind to existing cart state" assumes state that didn't quite
+exist yet.** There was no global cart-count state before this pass; cart data was fetched per-page as needed.
+Rather than introduce a new state-management layer (which would contradict "reuse existing logic, do not change
+how cart/auth state works"), the header re-fetches cart count via the *existing* `getCart()` call whenever the
+route changes or the access token changes (login/logout) — purely additive, zero changes to how any existing
+add/update/remove cart mutation works elsewhere in the app. Trade-off: the badge updates on navigation rather
+than instantly the moment an item is added without changing pages; acceptable given the alternative was scope
+creep into "change how cart state works," which was explicitly out of bounds for this pass.
+
+**Necessary honesty about scope — things the design shows that don't have a backend:** the wishlist heart icon,
+newsletter subscribe form, footer Support links (Help Center, Shipping & Delivery, Returns & Refunds, Contact
+Us), Privacy/Terms links, and the admin sidebar's Customers/Settings items and topbar search box are all
+rendered to match the design visually but are inert (no-op or `href="#"`) since building the backing features
+(wishlist storage, email capture, static content pages, customer management, global admin search) was explicitly
+out of scope for "implement the navbar, don't touch backend logic." "Analytics" in the admin sidebar links to
+the existing `/admin/dashboard` (which already covers sales/top-products analytics) rather than pointing nowhere.
+Each of these is called out with a `title` tooltip or a code comment at the point of implementation rather than
+silently pretending they're fully wired up.
+
+**Verification:** typechecked and linted clean; then a full real-browser pass (Playwright, both desktop and a
+390px mobile viewport) covering: logged-out header shows Log in/Sign up; the Categories dropdown and mobile
+drawer open correctly; logging in makes the avatar + a live cart badge appear (confirmed the badge reflects a
+real add-to-cart, not just a static icon); the avatar dropdown's Log out actually clears the session (header
+reverts to logged-out state); the admin dashboard/products/orders pages all render correctly inside the new
+dark sidebar shell; the sidebar's collapse toggle works; and "Back to store" navigates home. Caught and fixed
+one real bug in this pass: the admin sidebar's "Dashboard" and "Analytics" items shared the same
+`/admin/dashboard` href, so both lit up as "active" simultaneously — screenshot-caught, not something a
+text-only assertion would have flagged, fixed by excluding aliased nav items from the active-state check.
+
 ## Assumptions (consolidated)
 
 Every ambiguous point encountered, and the call made on it, in build order:
