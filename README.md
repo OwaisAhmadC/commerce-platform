@@ -61,6 +61,22 @@ This clears and repopulates `users`, `categories`, and `products`, and prints cr
 | Admin    | admin@example.com   | Admin123!     |
 | Customer | customer@example.com| Customer123!  |
 
+## Payments (Stripe test mode)
+
+Checkout uses real Stripe Checkout Sessions in test mode (not a mock). To fully exercise it end-to-end you need:
+
+1. A free Stripe account and its **test mode** secret key (`sk_test_...`) — set `STRIPE_SECRET_KEY` in `backend/.env`.
+2. The [Stripe CLI](https://docs.stripe.com/stripe-cli) forwarding webhooks to the backend during local dev:
+   ```bash
+   stripe listen --forward-to localhost:4000/api/checkout/webhook
+   ```
+   This prints a webhook signing secret (`whsec_...`) — set it as `STRIPE_WEBHOOK_SECRET` in `backend/.env`.
+
+Without real keys, `backend/.env.example`'s placeholder values (`sk_test_changeme` / `whsec_changeme`) let the app run,
+but creating a checkout session will fail with a clean `503 Payment provider is currently unavailable` error rather
+than a crash — the pending order created for the attempt is automatically rolled back. See `NOTES.md` (Phase 5) for
+how the checkout → webhook → atomic transaction flow was verified without needing real Stripe credentials.
+
 ## Running tests
 
 ```bash

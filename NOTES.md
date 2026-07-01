@@ -243,6 +243,74 @@ Running log of decisions, agent workflow, and verification — updated increment
   confirmed the total updated; removed the item and confirmed the "cart is empty" state. Zero browser console
   errors across the whole flow.
 
+## Phase 5 — Checkout + Orders
+
+**Payment approach:** the assessment spec allows either real Stripe test mode or a clearly-labeled mock. Asked
+the user directly rather than assuming — they chose real Stripe test mode, with dummy placeholder credentials
+for now (real keys to be added later). Built the actual Stripe Checkout Session + webhook integration, not a
+mock, designed so it degrades gracefully with placeholder keys until real ones are supplied.
+
+**Order lifecycle design:** an `Order` is created with status `pending` at the moment `POST /checkout/session`
+is called — *before* payment is confirmed — from a snapshot of the cart's current items/prices (name +
+`priceCentsAtPurchase`). Stock is **not** touched at this point. A Stripe Checkout Session is created with
+`metadata.orderId` pointing back at it and `expires_at` set to 30 minutes. This is a deliberate choice: it gives
+the `pending` status in the `OrderStatus` enum (`pending → processing → shipped → delivered`, plus `cancelled`)
+real meaning — "order placed, awaiting payment" — rather than skipping straight to `processing`.
+
+The atomic unit CLAUDE.md calls for ("decrement stock + create order + clear cart must succeed or fail
+together") happens in the **webhook handler**, not at session-creation time, because that's the actual moment
+payment is confirmed for a real (non-mocked) Stripe integration — the Order document already exists (as
+`pending`), so the transaction's job is: atomically decrement stock per line item via a conditional
+`findOneAndUpdate({_id, stock: {$gte: qty}}, {$inc: {stock: -qty}})` inside a `mongoose.startSession()` +
+`withTransaction()` block, flip the order to `processing`, and clear the user's cart — all inside the same
+transaction, so a mid-way failure (e.g. another concurrent order took the last unit) rolls everything back.
+
+**Handling the stock-race edge case:** if the atomic stock decrement fails for any item (theoretically possible
+if two customers both got past the pre-checkout stock check and one webhook fires first), the transaction is
+aborted, the order is marked `cancelled`, and the code makes a best-effort `stripe.refunds.create()` call so the
+customer isn't charged for something that couldn't be fulfilled — wrapped in its own try/catch so a refund API
+failure can't crash webhook processing. This is the kind of edge case CLAUDE.md explicitly asks to think through
+("ordering more than is in stock") applied to the async/webhook-driven reality of a real payment integration
+rather than a single-request mock.
+
+**Idempotency and cleanup:** the webhook handler no-ops if the order isn't still `pending` (handles Stripe's
+at-least-once webhook delivery — verified with a test that posts the same signed event twice and confirms stock
+is only decremented once). A `checkout.session.expired` handler also cancels abandoned `pending` orders after
+the 30-minute session window, so checkout attempts that are simply abandoned don't linger forever.
+
+**Verification without real Stripe credentials (important, since only placeholder keys are configured):**
+- `POST /checkout/session` was tested live: empty cart → 400; no auth → 401; with items but a placeholder
+  Stripe key → a clean `503 Payment provider is currently unavailable` (not a raw Stripe/network stack trace),
+  and confirmed via `GET /orders` that the pending order created for the attempt was rolled back (not left
+  orphaned).
+- The webhook handler's actual business logic — the part that matters most for data integrity — **was** fully
+  tested, because Stripe webhook signatures are pure local HMAC verification and don't require network access:
+  `backend/test/checkout.e2e-spec.ts` signs fake `checkout.session.completed`/`checkout.session.expired` events
+  with `stripe.webhooks.generateTestHeaderString()` using the same webhook secret the app is configured with, and
+  posts them directly to `/api/checkout/webhook`. Five tests cover: invalid signature → 400; happy path → stock
+  decremented, order → `processing`, cart cleared; the same event delivered twice → stock decremented only once
+  (idempotency); insufficient stock at completion time → order → `cancelled`, stock left untouched (not
+  decremented below zero); session expired → pending order → `cancelled`. All passing.
+- Additionally simulated a full "real" purchase for the seeded customer end-to-end outside the test suite: wrote
+  a throwaway script that creates a real pending order for the seeded customer against a real seeded product,
+  fires a signed webhook exactly as Stripe would, and confirmed via `mongosh` that stock actually decremented
+  (15 → 14) and the order flipped to `processing`. Then verified in a real browser (Playwright) that `/orders`
+  and `/orders/:id` render that order correctly, and separately that the `/checkout` page's "Pay with card"
+  button surfaces the graceful 503 error in the UI (not a crash) when attempted with the placeholder key.
+- **What's not yet verified:** the actual Stripe-hosted checkout page (card entry, 3-D Secure, etc.) and a real
+  webhook delivery from Stripe's servers — both require real test-mode credentials the user will add later. The
+  code path that depends on them (session creation succeeding, Stripe delivering the webhook itself) is
+  standard, well-documented Stripe SDK usage, but is explicitly flagged here as unverified pending real keys.
+- Fixed the seed script again (same class of bug as the Phase 4 cart fix): it wasn't clearing the `orders`
+  collection, so re-seeding would leave orders pointing at a deleted user's old `_id`. Now clears
+  users/categories/products/carts/orders together.
+
+**Frontend:** `/checkout` (order summary + "Pay with card" button that redirects to the returned Stripe URL),
+`/checkout/confirmation` (reads `?session_id=`, polls `GET /checkout/session/:sessionId` since the order's
+status update from the webhook can lag slightly behind the redirect back from Stripe, shows a distinct state for
+pending/processing/cancelled), `/orders` (history list) and `/orders/:id` (detail) — both scoped to the logged-in
+user server-side (ownership enforced in `OrdersService`, not just hidden in the UI).
+
 ## Design workflow
 
 Decided with the user up front (Phase 2 checkpoint): build functional pages with plain/provisional Tailwind

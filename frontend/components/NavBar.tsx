@@ -17,6 +17,9 @@ export function NavBar() {
             <Link href="/cart" className="underline">
               Cart
             </Link>
+            <Link href="/orders" className="underline">
+              Orders
+            </Link>
             <span className="text-zinc-600 dark:text-zinc-400">
               {user.email} ({user.role})
             </span>

@@ -50,6 +50,11 @@ export class Order {
   @Prop({ type: [OrderItemSchema], required: true })
   items: OrderItem[];
 
+  // Set when the order was created via Stripe Checkout; used by the webhook handler
+  // to look up the order and by the frontend confirmation page to poll its status.
+  @Prop({ index: true, sparse: true })
+  stripeSessionId?: string;
+
   createdAt?: Date;
 }
 

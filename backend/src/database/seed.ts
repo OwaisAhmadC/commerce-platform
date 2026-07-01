@@ -7,6 +7,7 @@ import { User, UserDocument } from '../users/schemas/user.schema';
 import { Category, CategoryDocument } from '../categories/schemas/category.schema';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { Cart, CartDocument } from '../cart/schemas/cart.schema';
+import { Order, OrderDocument } from '../orders/schemas/order.schema';
 
 const ADMIN_EMAIL = 'admin@example.com';
 const ADMIN_PASSWORD = 'Admin123!';
@@ -28,13 +29,15 @@ async function seed() {
   const categoryModel = app.get<Model<CategoryDocument>>(getModelToken(Category.name));
   const productModel = app.get<Model<ProductDocument>>(getModelToken(Product.name));
   const cartModel = app.get<Model<CartDocument>>(getModelToken(Cart.name));
+  const orderModel = app.get<Model<OrderDocument>>(getModelToken(Order.name));
 
-  console.log('Clearing existing users, categories, products, and carts...');
+  console.log('Clearing existing users, categories, products, carts, and orders...');
   await Promise.all([
     userModel.deleteMany({}),
     categoryModel.deleteMany({}),
     productModel.deleteMany({}),
     cartModel.deleteMany({}),
+    orderModel.deleteMany({}),
   ]);
 
   console.log('Seeding categories...');

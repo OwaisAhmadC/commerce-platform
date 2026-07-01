@@ -12,6 +12,6 @@ import { ProductsModule } from '../products/products.module';
   ],
   controllers: [CartController],
   providers: [CartService],
-  exports: [MongooseModule],
+  exports: [MongooseModule, CartService],
 })
 export class CartModule {}
