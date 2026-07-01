@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
+import { toJsonTransform } from '../../common/mongoose/to-json-transform';
 
 export type OrderStatus =
   | 'pending'
@@ -28,7 +29,10 @@ export class OrderItem {
 
 export const OrderItemSchema = SchemaFactory.createForClass(OrderItem);
 
-@Schema({ timestamps: { createdAt: true, updatedAt: true } })
+@Schema({
+  timestamps: { createdAt: true, updatedAt: true },
+  toJSON: { transform: toJsonTransform },
+})
 export class Order {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
   userId: Types.ObjectId;

@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
+import { toJsonTransform } from '../../common/mongoose/to-json-transform';
 
 export type CartDocument = HydratedDocument<Cart>;
 
@@ -14,7 +15,7 @@ export class CartItem {
 
 export const CartItemSchema = SchemaFactory.createForClass(CartItem);
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, toJSON: { transform: toJsonTransform } })
 export class Cart {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true, unique: true })
   userId: Types.ObjectId;

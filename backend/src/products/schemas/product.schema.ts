@@ -1,9 +1,13 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
+import { toJsonTransform } from '../../common/mongoose/to-json-transform';
 
 export type ProductDocument = HydratedDocument<Product>;
 
-@Schema({ timestamps: { createdAt: true, updatedAt: false } })
+@Schema({
+  timestamps: { createdAt: true, updatedAt: false },
+  toJSON: { transform: toJsonTransform },
+})
 export class Product {
   @Prop({ required: true, trim: true })
   name: string;

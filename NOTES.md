@@ -151,6 +151,57 @@ Running log of decisions, agent workflow, and verification — updated increment
   `localhost:3000` and `localhost:4000`) — a real production deployment should prefer `httpOnly`, `Secure`,
   `SameSite` cookies.
 
+## Phase 3 — Product catalog (read paths)
+
+**What was built:**
+- `ProductsService.findAll`: builds a Mongoose filter from `ListProductsQueryDto` (search, categoryId, price
+  range), sorts by `price_asc` / `price_desc` / `newest` (default), paginates with `skip`/`limit`, and returns
+  `{ items, total, page, limit, totalPages }`. `ProductsService.findById` returns 404 (not a 500) for both a
+  malformed ObjectId and a well-formed one that doesn't exist.
+- **Deliberate deviation from CLAUDE.md's literal wording:** search uses a case-insensitive regex on `name`
+  (escaped to avoid the input being interpreted as a regex) rather than MongoDB's `$text` operator. `$text`
+  matches whole/stemmed words, so searching "head" would **not** find "Wireless Headphones" — a real UX gap for
+  a product search box where users expect substring/prefix matches. The `name` text index from Phase 1 is kept
+  in place (harmless, and available if relevance-ranked search is worth revisiting later), but the query path
+  uses regex. At this catalog's size (18 products) the performance difference is irrelevant; documented here
+  since it's a conscious spec interpretation, not an oversight.
+- `CategoriesService`/`CategoriesController`: simple public `GET /categories`, used to populate the storefront's
+  category filter dropdown.
+- Added a shared `toJsonTransform` (`src/common/mongoose/to-json-transform.ts`) applied via each schema's
+  `toJSON` option, so every API response uses `id` instead of Mongoose's raw `_id`/`__v`. Applied retroactively
+  to all five schemas (User, Category, Product, Cart, Order) for a consistent contract now rather than
+  patching it in piecemeal later. The `User` schema's transform additionally strips `passwordHash` — defense in
+  depth in case a future endpoint accidentally returns a raw user document instead of a shaped DTO.
+- Frontend: `lib/api/products.ts`, `lib/api/categories.ts`, `lib/format.ts` (price formatting). The catalog page
+  (`app/page.tsx`) keeps filter/sort/page state in the URL query string (via `useSearchParams`/`router.push`)
+  rather than local-only React state, so filters are shareable/bookmarkable and back/forward navigation works —
+  a small deliberate upgrade over the minimum "it filters" requirement. Product detail page
+  (`app/products/[id]/page.tsx`) is a Server Component that calls `notFound()` on a 404 from the API.
+
+**Verification performed:**
+- `npx tsc --noEmit` clean on both backend and frontend.
+- Live curl testing against the running backend: category list; default listing (newest, page 1); substring
+  search ("head" matches "Wireless Headphones"); `sort=price_asc`/`price_desc` (spot-checked ordering);
+  pagination (`page=2&limit=5` returns 5 items, correct `totalPages`); price range filter (confirmed every
+  returned item's price actually falls in range); invalid `categoryId` → 400 (DTO validation catches a
+  non-ObjectId before it reaches the service); valid product id → 200; well-formed but non-existent id → 404;
+  malformed id → 404 (not 500).
+- Real browser verification (Playwright): loaded the catalog (18 products, 12 per page), searched "Headphones"
+  (narrowed to 1), filtered by the "Books" category (narrowed to 5), changed sort order, clicked into a product
+  card and confirmed the detail page rendered the correct name/price/description, and navigated to a
+  non-existent product id and confirmed Next's 404 page rendered (not a crash). Screenshots inspected directly —
+  confirmed the seeded zero-stock item ("Wireless Headphones") correctly shows "Out of stock" in both the
+  catalog grid and the detail page.
+
+**Things caught/corrected during Phase 3:**
+- `import { FilterQuery } from 'mongoose'` failed to compile — Mongoose 9.x (installed here, newer than this
+  assistant's training data) renamed that type to `QueryFilter<T>`. Found by grepping the installed package's
+  own `.d.ts` files (`node_modules/mongoose/types/query.d.ts`) rather than guessing from memory, since the
+  installed major version postdates what's in training. Worth remembering for later phases that also touch
+  Mongoose query typing.
+- Caught a self-inflicted duplicate-fetch bug while writing the catalog page: an early draft called
+  `listCategories()` twice in the same `useEffect` (one result discarded). Removed before it shipped.
+
 ## Design workflow
 
 Decided with the user up front (Phase 2 checkpoint): build functional pages with plain/provisional Tailwind

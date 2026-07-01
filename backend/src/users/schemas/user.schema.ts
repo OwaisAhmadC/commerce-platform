@@ -1,11 +1,21 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument } from 'mongoose';
+import { HydratedDocument, Document } from 'mongoose';
+import { toJsonTransform } from '../../common/mongoose/to-json-transform';
 
 export type UserRole = 'customer' | 'admin';
 
 export type UserDocument = HydratedDocument<User>;
 
-@Schema({ timestamps: { createdAt: true, updatedAt: false } })
+@Schema({
+  timestamps: { createdAt: true, updatedAt: false },
+  toJSON: {
+    transform: (doc: Document, ret: Record<string, unknown>) => {
+      const transformed = toJsonTransform(doc, ret);
+      delete transformed.passwordHash;
+      return transformed;
+    },
+  },
+})
 export class User {
   @Prop({ required: true, unique: true, lowercase: true, trim: true })
   email: string;

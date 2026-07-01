@@ -1,9 +1,13 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
+import { toJsonTransform } from '../../common/mongoose/to-json-transform';
 
 export type CategoryDocument = HydratedDocument<Category>;
 
-@Schema({ timestamps: { createdAt: true, updatedAt: false } })
+@Schema({
+  timestamps: { createdAt: true, updatedAt: false },
+  toJSON: { transform: toJsonTransform },
+})
 export class Category {
   @Prop({ required: true, unique: true, trim: true })
   name: string;
